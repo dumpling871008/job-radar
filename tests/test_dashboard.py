@@ -49,6 +49,12 @@ def dashboard_jobs():
                     today_start
                     + timedelta(hours=1)
                 ),
+                content_updated_at=(
+                    today_start
+                    + timedelta(hours=2)
+                    if index < 3
+                    else None
+                ),
             )
         )
 
@@ -67,6 +73,10 @@ def dashboard_jobs():
                 "dashboard-old"
             ),
             first_seen_at=(
+                today_start
+                - timedelta(seconds=1)
+            ),
+            content_updated_at=(
                 today_start
                 - timedelta(seconds=1)
             ),
@@ -169,6 +179,17 @@ def test_all_view_returns_successfully(
     )
 
     assert status == 200
+    navigation = [
+        link.get_text(strip=True)
+        for link in soup.select(
+            ".main-nav-link"
+        )
+    ]
+    assert navigation == [
+        "Jobs",
+        "Crawler Runs",
+        "Failures",
+    ]
     assert "共 22 筆職缺" in (
         soup.select_one(
             ".subtitle"
@@ -209,13 +230,55 @@ def test_today_view_returns_successfully(
     )
 
 
+def test_updated_view_returns_successfully(
+    dashboard_jobs,
+):
+    status, html = get_dashboard(
+        "/?view=updated&q="
+        f"{dashboard_jobs['marker']}"
+        "&location=%E6%B8%AC%E8%A9%A6%E5%B8%82"
+    )
+    soup = BeautifulSoup(
+        html,
+        "html.parser",
+    )
+
+    assert status == 200
+    assert "共 3 筆職缺" in (
+        soup.select_one(
+            ".subtitle"
+        ).get_text(" ", strip=True)
+    )
+    assert (
+        soup.select_one(
+            '.view-tab.active[data-view="updated"]'
+        )
+        is not None
+    )
+
+
+def test_updated_view_excludes_null_content_updated_at(
+    dashboard_jobs,
+):
+    marker = dashboard_jobs["marker"]
+    status, html = get_dashboard(
+        f"/?view=updated&q={marker}&location="
+        "%E6%B8%AC%E8%A9%A6%E5%B8%82"
+    )
+
+    assert status == 200
+    assert f"{marker} 測試職缺 0" in html
+    assert f"{marker} 測試職缺 3" not in html
+    assert f"{marker} 昨日測試職缺" not in html
+
+
 def test_q_location_and_view_can_coexist(
     dashboard_jobs,
 ):
     marker = dashboard_jobs["marker"]
 
     status, html = get_dashboard(
-        f"/?view=today&q={marker}&location="
+        f"/?view=updated&q={marker}&location="
         "%E6%B8%AC%E8%A9%A6%E5%B8%82&page=1"
     )
     soup = BeautifulSoup(
@@ -226,7 +289,7 @@ def test_q_location_and_view_can_coexist(
     assert status == 200
     assert soup.select_one(
         'input[name="view"]'
-    )["value"] == "today"
+    )["value"] == "updated"
     assert soup.select_one(
         'input[name="q"]'
     )["value"] == marker

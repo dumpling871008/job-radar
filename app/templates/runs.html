@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Crawler Runs | Job Radar{% endblock %}
+
+{% block content %}
+    <section class="monitor-header">
+        <div>
+            <h2>Crawler Runs</h2>
+            <p>共 {{ total_runs }} 筆執行紀錄</p>
+        </div>
+    </section>
+
+    <div class="monitor-list">
+        {% for run in crawler_runs %}
+            <article class="monitor-card">
+                <div class="monitor-card-header">
+                    <div>
+                        <div class="monitor-label">Run ID</div>
+                        <code class="monitor-id">{{ run.run_id }}</code>
+                    </div>
+
+                    <span
+                        class="status-badge status-badge--{{ run.status|lower|replace('_', '-') }}"
+                    >
+                        {{ run.status }}
+                    </span>
+                </div>
+
+                <dl class="monitor-grid">
+                    <div>
+                        <dt>Trigger</dt>
+                        <dd>{{ run.trigger_type }}</dd>
+                    </div>
+                    <div>
+                        <dt>Started</dt>
+                        <dd>{{ run.started_at }}</dd>
+                    </div>
+                    <div>
+                        <dt>Finished</dt>
+                        <dd>
+                            {% if run.finished_at %}
+                                {{ run.finished_at }}
+                            {% else %}
+                                執行中
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>Search</dt>
+                        <dd>{{ run.search_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Selected</dt>
+                        <dd>{{ run.selected_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Detail Success</dt>
+                        <dd>{{ run.detail_success_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Detail Failed</dt>
+                        <dd>{{ run.detail_failed_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Raw Inserted</dt>
+                        <dd>{{ run.raw_inserted_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>New</dt>
+                        <dd>{{ run.new_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Updated</dt>
+                        <dd>{{ run.updated_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Unchanged</dt>
+                        <dd>{{ run.unchanged_count }}</dd>
+                    </div>
+                </dl>
+
+                {% if run.error_message %}
+                    <div class="monitor-error">
+                        <strong>Error</strong>
+                        <p>{{ run.error_message }}</p>
+                    </div>
+                {% endif %}
+            </article>
+        {% else %}
+            <div class="empty">
+                目前沒有 crawler run。
+            </div>
+        {% endfor %}
+    </div>
+
+    {% include "monitor_pagination.html" %}
+{% endblock %}

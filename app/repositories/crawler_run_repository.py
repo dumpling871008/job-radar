@@ -1,3 +1,5 @@
+from sqlalchemy import func, select
+
 from app.models.crawler_run import CrawlerRun
 
 
@@ -32,3 +34,37 @@ class CrawlerRunRepository:
             CrawlerRun,
             run_id,
         )
+
+
+    def count_runs(self):
+
+        statement = select(
+            func.count(
+                CrawlerRun.run_id
+            )
+        )
+
+        return self.session.scalar(
+            statement
+        ) or 0
+
+
+    def list_runs(
+        self,
+        *,
+        offset=0,
+        limit=20,
+    ):
+
+        statement = (
+            select(CrawlerRun)
+            .order_by(
+                CrawlerRun.started_at.desc()
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+
+        return self.session.scalars(
+            statement
+        ).all()

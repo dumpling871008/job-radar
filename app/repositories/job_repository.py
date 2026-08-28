@@ -117,6 +117,7 @@ class JobRepository:
 
                 first_seen_at=now,
                 last_seen_at=now,
+                content_updated_at=None,
             )
 
             self.session.add(
@@ -210,6 +211,10 @@ class JobRepository:
                     "content_hash",
                     "",
                 )
+            )
+
+            existing_job.content_updated_at = (
+                now
             )
 
             return "updated"

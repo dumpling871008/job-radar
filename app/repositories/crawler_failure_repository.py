@@ -1,3 +1,5 @@
+from sqlalchemy import func, select
+
 from app.models.crawler_failure import (
     CrawlerFailure,
 )
@@ -34,3 +36,37 @@ class CrawlerFailureRepository:
         self.session.add(failure)
 
         return failure
+
+
+    def count_failures(self):
+
+        statement = select(
+            func.count(
+                CrawlerFailure.id
+            )
+        )
+
+        return self.session.scalar(
+            statement
+        ) or 0
+
+
+    def list_failures(
+        self,
+        *,
+        offset=0,
+        limit=20,
+    ):
+
+        statement = (
+            select(CrawlerFailure)
+            .order_by(
+                CrawlerFailure.created_at.desc()
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+
+        return self.session.scalars(
+            statement
+        ).all()

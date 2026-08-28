@@ -1,0 +1,19 @@
+{% if total_pages > 1 %}
+    <div class="pagination">
+        {% if previous_url %}
+            <a href="{{ previous_url }}">
+                ← 上一頁
+            </a>
+        {% endif %}
+
+        <span>
+            第 {{ page }} / {{ total_pages }} 頁
+        </span>
+
+        {% if next_url %}
+            <a href="{{ next_url }}">
+                下一頁 →
+            </a>
+        {% endif %}
+    </div>
+{% endif %}

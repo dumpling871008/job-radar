@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>{% block title %}Job Radar{% endblock %}</title>
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='css/jobs.css') }}"
+    >
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Job Radar</h1>
+            <p class="header-description">
+                自動蒐集與整理工程師職缺
+            </p>
+        </header>
+
+        <nav
+            class="main-navigation"
+            aria-label="Dashboard navigation"
+        >
+            <a
+                class="main-nav-link{% if active_page == 'jobs' %} active{% endif %}"
+                href="{{ url_for('home') }}"
+                {% if active_page == "jobs" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                Jobs
+            </a>
+
+            <a
+                class="main-nav-link{% if active_page == 'runs' %} active{% endif %}"
+                href="{{ url_for('runs') }}"
+                {% if active_page == "runs" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                Crawler Runs
+            </a>
+
+            <a
+                class="main-nav-link{% if active_page == 'failures' %} active{% endif %}"
+                href="{{ url_for('failures') }}"
+                {% if active_page == "failures" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                Failures
+            </a>
+        </nav>
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+
+</html>

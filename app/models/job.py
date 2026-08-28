@@ -106,6 +106,12 @@ class Job(Base):
         server_default=func.now(),
     )
 
+    # 職缺重要內容最近一次真正變更的時間
+    content_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     # DB 資料最後更新時間
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

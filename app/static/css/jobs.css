@@ -364,3 +364,228 @@ h1 {
 .location-select:focus {
     border-color: #0066cc;
 }
+
+
+/* =========================
+   Dashboard Navigation
+========================= */
+
+.main-navigation {
+    display: flex;
+    gap: 8px;
+
+    margin-bottom: 28px;
+    padding: 6px;
+
+    border: 1px solid #e2e2e2;
+    border-radius: 9px;
+    background: white;
+}
+
+.main-nav-link {
+    padding: 9px 14px;
+
+    border-radius: 6px;
+
+    color: #666;
+    font-size: 14px;
+    text-decoration: none;
+}
+
+.main-nav-link:hover {
+    background: #f5f6f8;
+    color: #222;
+}
+
+.main-nav-link.active {
+    background: #222;
+    color: white;
+    font-weight: 600;
+}
+
+.main-nav-link:focus-visible {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+}
+
+
+/* =========================
+   Monitoring Pages
+========================= */
+
+.monitor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+
+    margin-bottom: 20px;
+}
+
+.monitor-header h2 {
+    margin: 0 0 6px;
+    font-size: 24px;
+}
+
+.monitor-header p {
+    margin: 0;
+    color: #777;
+    font-size: 14px;
+}
+
+.monitor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.monitor-card {
+    padding: 20px;
+
+    border: 1px solid #e3e3e3;
+    border-radius: 10px;
+    background: white;
+}
+
+.monitor-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+
+    margin-bottom: 18px;
+}
+
+.monitor-label {
+    margin-bottom: 4px;
+
+    color: #888;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.monitor-id {
+    overflow-wrap: anywhere;
+    color: #333;
+    font-size: 13px;
+}
+
+.monitor-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+    gap: 16px;
+
+    margin: 0;
+}
+
+.monitor-grid div {
+    min-width: 0;
+}
+
+.monitor-grid dt {
+    margin-bottom: 4px;
+
+    color: #888;
+    font-size: 12px;
+}
+
+.monitor-grid dd {
+    margin: 0;
+
+    overflow-wrap: anywhere;
+    color: #333;
+    font-size: 14px;
+}
+
+.status-badge,
+.failure-stage {
+    display: inline-flex;
+    align-items: center;
+
+    padding: 5px 9px;
+
+    border-radius: 999px;
+
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.status-badge {
+    background: #eceff3;
+    color: #4d5661;
+}
+
+.status-badge--success {
+    background: #e5f6eb;
+    color: #18743c;
+}
+
+.status-badge--partial-success {
+    background: #fff3d6;
+    color: #8a5b00;
+}
+
+.status-badge--failed {
+    background: #fde8e8;
+    color: #a62424;
+}
+
+.status-badge--running {
+    background: #e7f0ff;
+    color: #245da8;
+}
+
+.failure-stage {
+    background: #f1edff;
+    color: #6044a6;
+}
+
+.monitor-error {
+    margin-top: 18px;
+    padding: 12px 14px;
+
+    border-left: 3px solid #c43b3b;
+    border-radius: 4px;
+    background: #fff6f6;
+
+    color: #762828;
+    font-size: 13px;
+}
+
+.monitor-error strong {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.monitor-error p {
+    margin: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 800px) {
+    .monitor-grid {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .main-navigation {
+        overflow-x: auto;
+    }
+
+    .main-nav-link {
+        white-space: nowrap;
+    }
+
+    .monitor-card-header {
+        flex-direction: column;
+    }
+
+    .monitor-grid {
+        grid-template-columns: 1fr;
+    }
+}

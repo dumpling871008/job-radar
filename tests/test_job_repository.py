@@ -63,6 +63,11 @@ def test_job_repository_upsert():
         assert saved_job is not None
         assert saved_job.title == "測試資料工程師"
         assert saved_job.description == "需要 Python"
+        assert saved_job.content_updated_at is None
+
+        original_first_seen_at = (
+            saved_job.first_seen_at
+        )
 
 
         # =========================
@@ -81,6 +86,11 @@ def test_job_repository_upsert():
         session.flush()
 
         assert result == "unchanged"
+        assert saved_job.content_updated_at is None
+        assert (
+            saved_job.first_seen_at
+            == original_first_seen_at
+        )
 
 
         # =========================
@@ -116,6 +126,16 @@ def test_job_repository_upsert():
         assert (
             updated_job.content_hash
             == changed_job["content_hash"]
+        )
+
+        assert (
+            updated_job.content_updated_at
+            is not None
+        )
+
+        assert (
+            updated_job.first_seen_at
+            == original_first_seen_at
         )
 
     finally:

@@ -1,45 +1,8 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
+{% extends "base.html" %}
 
-<head>
+{% block title %}Jobs | Job Radar{% endblock %}
 
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>Job Radar</title>
-
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='css/jobs.css') }}"
-    >
-
-</head>
-
-
-<body>
-
-    <div class="container">
-
-
-        <!-- ====================== -->
-        <!-- Header -->
-        <!-- ====================== -->
-
-        <header class="header">
-
-            <h1>
-                Job Radar
-            </h1>
-
-            <p class="header-description">
-                自動蒐集與整理工程師職缺
-            </p>
-
-        </header>
+{% block content %}
 
 
 
@@ -72,6 +35,17 @@
                 {% endif %}
             >
                 今日新增
+            </a>
+
+            <a
+                class="view-tab{% if view == 'updated' %} active{% endif %}"
+                href="{{ updated_view_url }}"
+                data-view="updated"
+                {% if view == "updated" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                JD 更新
             </a>
 
         </nav>
@@ -394,10 +368,4 @@
             </div>
 
         {% endif %}
-
-
-    </div>
-
-</body>
-
-</html>
+{% endblock %}

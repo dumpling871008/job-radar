@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Failures | Job Radar{% endblock %}
+
+{% block content %}
+    <section class="monitor-header">
+        <div>
+            <h2>Crawler Failures</h2>
+            <p>共 {{ total_failures }} 筆錯誤紀錄</p>
+        </div>
+    </section>
+
+    <div class="monitor-list">
+        {% for failure in crawler_failures %}
+            <article class="monitor-card">
+                <div class="monitor-card-header">
+                    <div>
+                        <div class="monitor-label">Run ID</div>
+                        <code class="monitor-id">{{ failure.run_id }}</code>
+                    </div>
+
+                    <span class="failure-stage">
+                        {{ failure.stage }}
+                    </span>
+                </div>
+
+                <dl class="monitor-grid">
+                    <div>
+                        <dt>Created</dt>
+                        <dd>{{ failure.created_at }}</dd>
+                    </div>
+                    <div>
+                        <dt>Source Job ID</dt>
+                        <dd>{{ failure.source_job_id or "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Attempts</dt>
+                        <dd>{{ failure.attempt_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>HTTP Status</dt>
+                        <dd>{{ failure.http_status or "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Error Type</dt>
+                        <dd>{{ failure.error_type or "—" }}</dd>
+                    </div>
+                </dl>
+
+                <div class="monitor-error">
+                    <strong>Error</strong>
+                    <p>{{ failure.error_message }}</p>
+                </div>
+            </article>
+        {% else %}
+            <div class="empty">
+                目前沒有 crawler failure。
+            </div>
+        {% endfor %}
+    </div>
+
+    {% include "monitor_pagination.html" %}
+{% endblock %}

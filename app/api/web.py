@@ -11,6 +11,12 @@ from sqlalchemy import func, or_, select
 
 from app.db.database import SessionLocal
 from app.models.job import Job
+from app.repositories.crawler_failure_repository import (
+    CrawlerFailureRepository,
+)
+from app.repositories.crawler_run_repository import (
+    CrawlerRunRepository,
+)
 
 
 app = FastAPI(
@@ -58,11 +64,66 @@ def taipei_today_range():
     return start, start + timedelta(days=1)
 
 
+def monitoring_pagination(
+    request,
+    route_name,
+    requested_page,
+    total_items,
+):
+    total_pages = max(
+        math.ceil(
+            total_items / PAGE_SIZE
+        ),
+        1,
+    )
+
+    page = min(
+        requested_page,
+        total_pages,
+    )
+
+    route_url = request.url_for(
+        route_name
+    )
+
+    previous_url = None
+    next_url = None
+
+    if page > 1:
+        previous_url = (
+            route_url.include_query_params(
+                page=page - 1
+            )
+        )
+
+    if page < total_pages:
+        next_url = (
+            route_url.include_query_params(
+                page=page + 1
+            )
+        )
+
+    return {
+        "page": page,
+        "total_pages": total_pages,
+        "offset": (
+            (page - 1)
+            * PAGE_SIZE
+        ),
+        "previous_url": previous_url,
+        "next_url": next_url,
+    }
+
+
 @app.get("/")
 def home(
     request: Request,
 
-    view: Literal["all", "today"] = Query(
+    view: Literal[
+        "all",
+        "today",
+        "updated",
+    ] = Query(
         default="all",
     ),
 
@@ -130,6 +191,23 @@ def home(
                     >= today_start,
 
                     Job.first_seen_at
+                    < tomorrow_start,
+                ]
+            )
+
+        # 今日 JD 更新：只看重要內容變更時間
+        elif view == "updated":
+
+            today_start, tomorrow_start = (
+                taipei_today_range()
+            )
+
+            filters.extend(
+                [
+                    Job.content_updated_at
+                    >= today_start,
+
+                    Job.content_updated_at
                     < tomorrow_start,
                 ]
             )
@@ -276,6 +354,15 @@ def home(
         )
     )
 
+    updated_view_url = (
+        home_url.include_query_params(
+            view="updated",
+            q=q,
+            location=location,
+            page=1,
+        )
+    )
+
     clear_url = (
         home_url.include_query_params(
             view=view,
@@ -315,6 +402,7 @@ def home(
         request=request,
         name="jobs.html",
         context={
+            "active_page": "jobs",
             "jobs": jobs,
             "view": view,
             "page": page,
@@ -327,8 +415,111 @@ def home(
 
             "all_view_url": all_view_url,
             "today_view_url": today_view_url,
+            "updated_view_url": updated_view_url,
             "clear_url": clear_url,
             "previous_url": previous_url,
             "next_url": next_url,
+        },
+    )
+
+
+@app.get("/runs")
+def runs(
+    request: Request,
+    page: int = Query(
+        default=1,
+        ge=1,
+    ),
+):
+    with SessionLocal() as session:
+        repository = (
+            CrawlerRunRepository(
+                session
+            )
+        )
+
+        total_runs = (
+            repository.count_runs()
+        )
+
+        pagination = (
+            monitoring_pagination(
+                request=request,
+                route_name="runs",
+                requested_page=page,
+                total_items=total_runs,
+            )
+        )
+
+        crawler_runs = (
+            repository.list_runs(
+                offset=(
+                    pagination["offset"]
+                ),
+                limit=PAGE_SIZE,
+            )
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="runs.html",
+        context={
+            "active_page": "runs",
+            "crawler_runs": crawler_runs,
+            "total_runs": total_runs,
+            **pagination,
+        },
+    )
+
+
+@app.get("/failures")
+def failures(
+    request: Request,
+    page: int = Query(
+        default=1,
+        ge=1,
+    ),
+):
+    with SessionLocal() as session:
+        repository = (
+            CrawlerFailureRepository(
+                session
+            )
+        )
+
+        total_failures = (
+            repository.count_failures()
+        )
+
+        pagination = (
+            monitoring_pagination(
+                request=request,
+                route_name="failures",
+                requested_page=page,
+                total_items=total_failures,
+            )
+        )
+
+        crawler_failures = (
+            repository.list_failures(
+                offset=(
+                    pagination["offset"]
+                ),
+                limit=PAGE_SIZE,
+            )
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="failures.html",
+        context={
+            "active_page": "failures",
+            "crawler_failures": (
+                crawler_failures
+            ),
+            "total_failures": (
+                total_failures
+            ),
+            **pagination,
         },
     )
