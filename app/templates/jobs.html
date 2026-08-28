@@ -5,6 +5,47 @@
 {% block content %}
 
 
+        <section class="dashboard-actions">
+            <form
+                method="post"
+                action="{{ url_for('trigger_crawler_run') }}"
+            >
+                <button
+                    class="crawler-run-button"
+                    type="submit"
+                >
+                    立即更新職缺
+                </button>
+
+                {% include "job_application_redirect_fields.html" %}
+            </form>
+
+            <a
+                class="crawler-runs-link"
+                href="{{ url_for('runs') }}"
+            >
+                查看執行紀錄
+            </a>
+        </section>
+
+
+        {% if message == "crawler_started" %}
+            <div
+                class="dashboard-message dashboard-message--success"
+                role="status"
+            >
+                已開始更新職缺。
+            </div>
+        {% elif message == "crawler_already_running" %}
+            <div
+                class="dashboard-message dashboard-message--warning"
+                role="status"
+            >
+                目前已有爬蟲正在執行。
+            </div>
+        {% endif %}
+
+
 
         <!-- ====================== -->
         <!-- View Tabs -->

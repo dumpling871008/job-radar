@@ -4,6 +4,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     Form,
     HTTPException,
@@ -31,6 +32,10 @@ from app.repositories.crawler_run_repository import (
 from app.services.job_application_service import (
     JOB_APPLICATION_STATUSES,
     JobApplicationService,
+)
+from app.services.pipeline_service import (
+    reserve_pipeline,
+    run_pipeline,
 )
 
 
@@ -209,6 +214,13 @@ def home(
     ] = Query(
         default="all",
         alias="status",
+    ),
+
+    message: Literal[
+        "crawler_started",
+        "crawler_already_running",
+    ] | None = Query(
+        default=None,
     ),
 ):
 
@@ -572,6 +584,7 @@ def home(
             "status_filter_urls": (
                 status_filter_urls
             ),
+            "message": message,
 
             "all_view_url": all_view_url,
             "today_view_url": today_view_url,
@@ -592,22 +605,74 @@ def job_dashboard_redirect(
     sort,
     application_status,
     page,
+    message=None,
 ):
-    return RedirectResponse(
-        url=str(
-            dashboard_url(
-                request.url_for("home"),
-                view=view,
-                q=q,
-                location=location,
-                sort=sort,
-                application_status=(
-                    application_status
-                ),
-                page=page,
-            )
+    redirect_url = dashboard_url(
+        request.url_for("home"),
+        view=view,
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            application_status
         ),
+        page=page,
+    )
+
+    if message:
+        redirect_url = (
+            redirect_url.include_query_params(
+                message=message
+            )
+        )
+
+    return RedirectResponse(
+        url=str(redirect_url),
         status_code=303,
+    )
+
+
+@app.post("/crawler/run")
+def trigger_crawler_run(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    view: str = Form("all"),
+    q: str = Form(""),
+    location: str = Form(""),
+    sort: str = Form(""),
+    page: int = Form(1),
+    filter_status: str = Form("all"),
+):
+    reservation = reserve_pipeline()
+
+    if reservation is None:
+        message = (
+            "crawler_already_running"
+        )
+    else:
+        try:
+            background_tasks.add_task(
+                run_pipeline,
+                trigger_type="DASHBOARD",
+                reservation=reservation,
+            )
+        except Exception:
+            reservation.release()
+            raise
+
+        message = "crawler_started"
+
+    return job_dashboard_redirect(
+        request,
+        view=view,
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            filter_status
+        ),
+        page=max(page, 1),
+        message=message,
     )
 
 

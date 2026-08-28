@@ -201,6 +201,62 @@ h1 {
     color: #777;
 }
 
+.dashboard-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    margin-bottom: 18px;
+}
+
+.dashboard-actions form {
+    margin: 0;
+}
+
+.crawler-run-button {
+    min-height: 40px;
+    padding: 0 16px;
+
+    border: 1px solid #222;
+    border-radius: 7px;
+    background: #222;
+
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.crawler-run-button:hover {
+    background: #000;
+}
+
+.crawler-runs-link {
+    color: #555;
+    font-size: 14px;
+}
+
+.dashboard-message {
+    margin-bottom: 18px;
+    padding: 12px 14px;
+
+    border: 1px solid transparent;
+    border-radius: 7px;
+
+    font-size: 14px;
+}
+
+.dashboard-message--success {
+    border-color: #b9dfc6;
+    background: #edf9f1;
+    color: #176839;
+}
+
+.dashboard-message--warning {
+    border-color: #efd18a;
+    background: #fff8e6;
+    color: #795200;
+}
+
 
 /* =========================
    View Tabs
