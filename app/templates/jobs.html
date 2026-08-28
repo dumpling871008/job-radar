@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Job Radar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='css/jobs.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+    <div class="container">
+
+
+        <!-- ====================== -->
+        <!-- Header -->
+        <!-- ====================== -->
+
+        <header class="header">
+
+            <h1>
+                Job Radar
+            </h1>
+
+            <p class="header-description">
+                自動蒐集與整理工程師職缺
+            </p>
+
+        </header>
+
+
+
+        <!-- ====================== -->
+        <!-- View Tabs -->
+        <!-- ====================== -->
+
+        <nav
+            class="view-tabs"
+            aria-label="職缺檢視"
+        >
+
+            <a
+                class="view-tab{% if view == 'all' %} active{% endif %}"
+                href="{{ all_view_url }}"
+                data-view="all"
+                {% if view == "all" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                全部職缺
+            </a>
+
+            <a
+                class="view-tab{% if view == 'today' %} active{% endif %}"
+                href="{{ today_view_url }}"
+                data-view="today"
+                {% if view == "today" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                今日新增
+            </a>
+
+        </nav>
+
+
+
+        <!-- ====================== -->
+        <!-- Search -->
+        <!-- ====================== -->
+
+        <form
+            class="search-bar"
+            method="get"
+            action="/"
+        >
+
+            <input
+                type="hidden"
+                name="view"
+                value="{{ view }}"
+            >
+
+            <!-- 關鍵字 -->
+
+            <input
+                class="search-input"
+                type="text"
+                name="q"
+                value="{{ q }}"
+                placeholder="搜尋職缺、公司、Python、AI..."
+            >
+
+
+            <!-- 地區 -->
+
+            <select
+                class="location-select"
+                name="location"
+            >
+
+                <option value="">
+                    全部地區
+                </option>
+
+
+                {% for item in locations %}
+
+                    <option
+                        value="{{ item }}"
+
+                        {% if item == location %}
+                            selected
+                        {% endif %}
+                    >
+                        {{ item }}
+                    </option>
+
+                {% endfor %}
+
+            </select>
+
+
+            <!-- 搜尋 -->
+
+            <button
+                class="search-button"
+                type="submit"
+            >
+                搜尋
+            </button>
+
+
+            <!-- 清除 -->
+
+            {% if q or location %}
+
+                <a
+                    class="clear-button"
+                    href="{{ clear_url }}"
+                >
+                    清除
+                </a>
+
+            {% endif %}
+
+        </form>
+
+
+
+        <!-- ====================== -->
+        <!-- Result information -->
+        <!-- ====================== -->
+
+        <div class="subtitle">
+
+            {% if q or location %}
+
+                搜尋條件：
+
+                {% if q %}
+                    「{{ q }}」
+                {% endif %}
+
+                {% if location %}
+                    {{ location }}
+                {% endif %}
+
+                ，共 {{ total_jobs }} 筆職缺
+
+            {% else %}
+
+                共 {{ total_jobs }} 筆職缺
+
+            {% endif %}
+
+        </div>
+
+
+
+        <!-- ====================== -->
+        <!-- Job List -->
+        <!-- ====================== -->
+
+        <div class="job-list">
+
+
+            {% for job in jobs %}
+
+                <article class="job">
+
+
+                    <!-- Job title -->
+
+                    <div class="job-title">
+
+                        <a
+                            href="{{ job.url }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            {{ job.title }}
+                        </a>
+
+                    </div>
+
+
+
+                    <!-- Company -->
+
+                    <div class="company">
+
+                        {{ job.company_name }}
+
+                    </div>
+
+
+
+                    <!-- Location -->
+
+                    <div class="location">
+
+                        {% if job.location %}
+
+                            {{ job.location }}
+
+                        {% else %}
+
+                            地點未提供
+
+                        {% endif %}
+
+                    </div>
+
+
+
+                    <!-- Meta -->
+
+                    <div class="meta">
+
+
+                        {% if job.experience %}
+
+                            <span>
+
+                                經驗：
+                                {{ job.experience }}
+
+                            </span>
+
+                        {% endif %}
+
+
+                        {% if job.education %}
+
+                            <span>
+
+                                學歷：
+                                {{ job.education }}
+
+                            </span>
+
+                        {% endif %}
+
+
+                        <span>
+
+                            第一次發現：
+                            {{ job.first_seen_at }}
+
+                        </span>
+
+
+                    </div>
+
+
+
+                    <!-- Description -->
+
+                    <div class="description">
+
+                        {% if job.description %}
+
+                            {{ job.description[:300] }}
+
+                            {% if job.description|length > 300 %}
+
+                                ...
+
+                            {% endif %}
+
+                        {% else %}
+
+                            此職缺目前沒有完整 JD。
+
+                        {% endif %}
+
+                    </div>
+
+
+                </article>
+
+
+            {% else %}
+
+
+                <div class="empty">
+
+                    {% if q %}
+
+                        找不到符合
+                        「{{ q }}」
+                        的職缺。
+
+                    {% else %}
+
+                        目前資料庫中沒有職缺。
+
+                    {% endif %}
+
+                </div>
+
+
+            {% endfor %}
+
+
+        </div>
+
+
+
+        <!-- ====================== -->
+        <!-- Pagination -->
+        <!-- ====================== -->
+
+        {% if total_jobs > 0 %}
+
+            <div class="pagination">
+
+
+                {% if previous_url %}
+
+                    <a
+                        href="{{ previous_url }}"
+                    >
+                        ← 上一頁
+                    </a>
+
+                {% endif %}
+
+
+
+                <span>
+
+                    第 {{ page }}
+                    /
+                    {{ total_pages }} 頁
+
+                </span>
+
+
+
+                {% if next_url %}
+
+                    <a
+                        href="{{ next_url }}"
+                    >
+                        下一頁 →
+                    </a>
+
+                {% endif %}
+
+
+            </div>
+
+
+            <div class="page-info">
+
+                目前第 {{ page }} 頁，
+                共 {{ total_pages }} 頁
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</body>
+
+</html>
