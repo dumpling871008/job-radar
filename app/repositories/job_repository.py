@@ -28,6 +28,27 @@ class JobRepository:
         )
 
 
+    def find_by_source_job_ids(
+        self,
+        source_job_ids,
+    ):
+        if not source_job_ids:
+            return []
+
+        statement = (
+            select(Job)
+            .where(
+                Job.source_job_id.in_(
+                    source_job_ids
+                )
+            )
+        )
+
+        return self.session.scalars(
+            statement
+        ).all()
+
+
     def upsert(self, job_data):
         """
         新職缺 → INSERT
@@ -118,6 +139,7 @@ class JobRepository:
                 first_seen_at=now,
                 last_seen_at=now,
                 content_updated_at=None,
+                last_detail_checked_at=now,
             )
 
             self.session.add(
@@ -142,6 +164,9 @@ class JobRepository:
         # 不管有沒有改變
         # 都代表今天再次看到它
         existing_job.last_seen_at = now
+        existing_job.last_detail_checked_at = (
+            now
+        )
 
 
         # =====================

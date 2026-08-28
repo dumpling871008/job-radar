@@ -1,62 +1,176 @@
+import time
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
+
 from app.config import (
+    DETAIL_REFRESH_HOURS,
+    MAX_DETAIL_FETCHES,
+    MAX_SEARCH_PAGES_PER_KEYWORD,
+    REQUEST_INTERVAL_SECONDS,
     SEARCH_QUOTAS,
-    MAX_JOBS,
-    START_PAGE,
-    END_PAGE,
 )
-
 from app.crawler.client import (
-    fetch_search_page,
+    DetailAccessForbiddenError,
     fetch_job_detail,
+    fetch_search_page,
 )
-
 from app.crawler.transform import (
     transform_job,
 )
-
+from app.db.database import SessionLocal
+from app.repositories.job_repository import (
+    JobRepository,
+)
 from app.services.crawler_failure_service import (
     save_crawler_failure,
 )
 
 
-def crawl_jobs(run_id):
+def find_existing_jobs(source_job_ids):
+    """Load one Search batch with a single IN query."""
+    with SessionLocal() as session:
+        repository = JobRepository(session)
+        jobs = (
+            repository.find_by_source_job_ids(
+                source_job_ids
+            )
+        )
 
-    # =========================
-    # 1. 多關鍵字搜尋
-    # =========================
+        return {
+            job.source_job_id: job
+            for job in jobs
+        }
 
-    selected_jobs = []
 
-    # 用來全域去重
-    seen_job_no = set()
+def select_detail_candidates(
+    search_jobs,
+    existing_jobs,
+    *,
+    now=None,
+    max_candidates=None,
+):
+    now = now or datetime.now(
+        timezone.utc
+    )
+    stale_before = now - timedelta(
+        hours=DETAIL_REFRESH_HOURS
+    )
+    candidates = []
+    stats = {
+        "new_candidate_count": 0,
+        "refresh_candidate_count": 0,
+        "fresh_skipped_count": 0,
+    }
 
-    # 記錄 Search API 總共回傳多少資料
-    search_count = 0
+    for job_data in search_jobs:
+        source_job_id = str(
+            job_data.get("jobNo", "")
+        )
+        existing_job = existing_jobs.get(
+            source_job_id
+        )
 
-    # 記錄每個關鍵字最後取幾筆
+        if existing_job is None:
+            candidate_type = "NEW"
+        elif (
+            existing_job.last_detail_checked_at
+            is None
+            or existing_job.last_detail_checked_at
+            < stale_before
+        ):
+            candidate_type = "STALE"
+        else:
+            stats[
+                "fresh_skipped_count"
+            ] += 1
+            continue
+
+        if (
+            max_candidates is not None
+            and len(candidates)
+            >= max_candidates
+        ):
+            continue
+
+        candidates.append(job_data)
+
+        if candidate_type == "NEW":
+            stats[
+                "new_candidate_count"
+            ] += 1
+        else:
+            stats[
+                "refresh_candidate_count"
+            ] += 1
+
+    return candidates, stats
+
+
+def save_search_failure(
+    run_id,
+    error,
+):
+    response = getattr(
+        error,
+        "response",
+        None,
+    )
+
+    save_crawler_failure(
+        run_id=run_id,
+        stage="SEARCH",
+        attempt_count=1,
+        http_status=getattr(
+            response,
+            "status_code",
+            None,
+        ),
+        error_type=type(error).__name__,
+        error_message=str(error),
+    )
+
+
+def collect_detail_candidates(run_id):
+    candidate_jobs = []
+    seen_job_ids = set()
     keyword_counts = {}
+    stats = {
+        "search_count": 0,
+        "search_unique_count": 0,
+        "new_candidate_count": 0,
+        "refresh_candidate_count": 0,
+        "fresh_skipped_count": 0,
+    }
 
-    for keyword, quota in SEARCH_QUOTAS.items():
+    for keyword, quota in (
+        SEARCH_QUOTAS.items()
+    ):
+        keyword_candidate_count = 0
+
+        if quota <= 0:
+            keyword_counts[keyword] = 0
+            continue
 
         print("=" * 50)
         print(
             f"開始搜尋：{keyword}"
-            f"（目標 {quota} 筆）"
+            f"（candidate 上限 {quota} 筆）"
         )
 
-        keyword_added = 0
-
         for page in range(
-            START_PAGE,
-            END_PAGE + 1,
+            1,
+            MAX_SEARCH_PAGES_PER_KEYWORD
+            + 1,
         ):
-
-            # 這個 keyword 已經滿額
-            if keyword_added >= quota:
-                break
-
-            # 全部已經 50 筆
-            if len(selected_jobs) >= MAX_JOBS:
+            if (
+                len(candidate_jobs)
+                >= MAX_DETAIL_FETCHES
+                or keyword_candidate_count
+                >= quota
+            ):
                 break
 
             print(
@@ -64,218 +178,267 @@ def crawl_jobs(run_id):
                 f"第 {page} 頁..."
             )
 
-            jobs = fetch_search_page(
-                keyword=keyword,
-                page=page,
+            try:
+                search_jobs = fetch_search_page(
+                    keyword=keyword,
+                    page=page,
+                )
+            except Exception as error:
+                save_search_failure(
+                    run_id,
+                    error,
+                )
+                raise
+
+            stats["search_count"] += len(
+                search_jobs
             )
 
-            search_count += len(jobs)
-
-            print(
-                f"第 {page} 頁取得 "
-                f"{len(jobs)} 筆搜尋結果"
-            )
-
-            # 如果這一頁完全沒資料
-            # 就不用繼續翻頁
-            if not jobs:
+            if not search_jobs:
                 break
 
-            for job_data in jobs:
+            unique_search_jobs = []
+            unique_job_ids = []
 
-                job_no = str(
+            for job_data in search_jobs:
+                source_job_id = str(
                     job_data.get(
                         "jobNo",
                         "",
                     )
                 )
 
-                # 沒有 jobNo 就不要
-                if not job_no:
+                if (
+                    not source_job_id
+                    or source_job_id
+                    in seen_job_ids
+                ):
                     continue
 
-                # 已經抓過就跳過
-                if job_no in seen_job_no:
-                    continue
-
-                # 加入全域去重紀錄
-                seen_job_no.add(job_no)
-
-                selected_jobs.append(
+                seen_job_ids.add(
+                    source_job_id
+                )
+                unique_job_ids.append(
+                    source_job_id
+                )
+                unique_search_jobs.append(
                     job_data
                 )
 
-                keyword_added += 1
+            stats[
+                "search_unique_count"
+            ] += len(unique_search_jobs)
 
-                # 此 keyword 已經滿額
-                if keyword_added >= quota:
-                    break
+            if not unique_search_jobs:
+                continue
 
-                # 全部已達 50
-                if len(selected_jobs) >= MAX_JOBS:
-                    break
+            existing_jobs = find_existing_jobs(
+                unique_job_ids
+            )
+            remaining_budget = min(
+                MAX_DETAIL_FETCHES
+                - len(candidate_jobs),
+                quota
+                - keyword_candidate_count,
+            )
+            page_candidates, page_stats = (
+                select_detail_candidates(
+                    unique_search_jobs,
+                    existing_jobs,
+                    max_candidates=(
+                        remaining_budget
+                    ),
+                )
+            )
+
+            candidate_jobs.extend(
+                page_candidates
+            )
+            keyword_candidate_count += len(
+                page_candidates
+            )
+
+            for key in (
+                "new_candidate_count",
+                "refresh_candidate_count",
+                "fresh_skipped_count",
+            ):
+                stats[key] += page_stats[key]
+
+            print(
+                f"目前累積 "
+                f"{len(candidate_jobs)} 個 "
+                "Detail candidates"
+            )
 
         keyword_counts[keyword] = (
-            keyword_added
+            keyword_candidate_count
         )
 
-        print(
-            f"「{keyword}」"
-            f"實際加入 {keyword_added} 筆"
-        )
-
-        print(
-            f"目前累積 "
-            f"{len(selected_jobs)} 筆"
-        )
-
-        if len(selected_jobs) >= MAX_JOBS:
+        if (
+            len(candidate_jobs)
+            >= MAX_DETAIL_FETCHES
+        ):
             break
 
+    stats["keyword_counts"] = (
+        keyword_counts
+    )
 
-    print("=" * 50)
+    return candidate_jobs, stats
 
-    print(
-        f"最終選出 "
-        f"{len(selected_jobs)} 筆不重複職缺"
+
+def record_detail_failure(
+    *,
+    run_id,
+    source_job_id,
+    error,
+):
+    save_crawler_failure(
+        run_id=run_id,
+        stage="DETAIL",
+        source_job_id=source_job_id,
+        attempt_count=getattr(
+            error,
+            "attempt_count",
+            1,
+        ),
+        http_status=getattr(
+            error,
+            "http_status",
+            None,
+        ),
+        error_type=type(error).__name__,
+        error_message=str(error),
     )
 
 
-    # =========================
-    # 2. 抓完整 JD
-    # =========================
+def crawl_jobs(run_id):
+    selected_jobs, selection_stats = (
+        collect_detail_candidates(
+            run_id
+        )
+    )
+
+    print("=" * 50)
+    print(
+        f"最終選出 {len(selected_jobs)} 個 "
+        "Detail candidates"
+    )
 
     clean_jobs = []
     raw_jobs = []
-
     success_count = 0
     failed_count = 0
-
     failed_jobs = []
-
-    total = len(selected_jobs)
+    detail_attempted_count = 0
+    stopped_by_forbidden = False
 
     for index, job_data in enumerate(
         selected_jobs,
         start=1,
     ):
-
         job_name = job_data.get(
             "jobName",
             "",
         )
-
         job_url = (
             job_data
             .get("link", {})
             .get("job", "")
         )
-
         job_no = str(
-            job_data.get(
-                "jobNo",
-                "",
-            )
-        )
-
-        print(
-            f"[{index}/{total}] "
-            f"正在抓完整 JD："
-            f"{job_name}"
+            job_data.get("jobNo", "")
         )
 
         if not job_url:
-
             failed_count += 1
-
-            failed_jobs.append(
-                job_no
-            )
-
+            failed_jobs.append(job_no)
             continue
 
-        try:
+        if (
+            detail_attempted_count > 0
+            and REQUEST_INTERVAL_SECONDS > 0
+        ):
+            time.sleep(
+                REQUEST_INTERVAL_SECONDS
+            )
 
-            detail_data, attempt_count = (
-                fetch_job_detail(
-                    job_url
-                )
+        detail_attempted_count += 1
+
+        print(
+            f"[{index}/{len(selected_jobs)}] "
+            "正在抓完整 JD："
+            f"{job_name}"
+        )
+
+        try:
+            detail_data, _ = (
+                fetch_job_detail(job_url)
             )
             raw_job = {
                 "source_job_id": job_no,
                 "source_url": job_url,
-
                 "raw_data": {
                     "search": job_data,
                     "detail": detail_data,
                 },
             }
-
             raw_jobs.append(raw_job)
+
             job = transform_job(
                 job_data,
                 detail_data,
             )
-
-            if job["description"]:
-
-                success_count += 1
-
-            else:
-
-                failed_count += 1
-
-                failed_jobs.append(
-                    job_no
-                )
-
             clean_jobs.append(job)
 
-        except Exception as error:
+            if job["description"]:
+                success_count += 1
+            else:
+                failed_count += 1
+                failed_jobs.append(job_no)
 
+        except DetailAccessForbiddenError as error:
             failed_count += 1
-
-            failed_jobs.append(
-                job_no
-            )
-
-            save_crawler_failure(
+            failed_jobs.append(job_no)
+            record_detail_failure(
                 run_id=run_id,
-                stage="DETAIL",
                 source_job_id=job_no,
-                attempt_count=3,
-                error_type=type(error).__name__,
-                error_message=str(error),
+                error=error,
             )
+            stopped_by_forbidden = True
 
             print(
-                f"取得失敗：{job_no}"
+                "Detail API 回傳 403，"
+                "安全停止本次 Detail 抓取。"
+            )
+            break
+
+        except Exception as error:
+            failed_count += 1
+            failed_jobs.append(job_no)
+            record_detail_failure(
+                run_id=run_id,
+                source_job_id=job_no,
+                error=error,
             )
 
-            print(
-                f"原因：{error}"
-            )
-
-
-    # =========================
-    # 3. 統計
-    # =========================
+            print(f"取得失敗：{job_no}")
+            print(f"原因：{error}")
 
     stats = {
-        "search_count": search_count,
-
+        **selection_stats,
         "selected_count": len(
             selected_jobs
         ),
-
+        "detail_attempted_count": (
+            detail_attempted_count
+        ),
         "success_count": success_count,
-
         "failed_count": failed_count,
-
         "failed_jobs": failed_jobs,
-
-        "keyword_counts": (
-            keyword_counts
+        "stopped_by_forbidden": (
+            stopped_by_forbidden
         ),
     }
 

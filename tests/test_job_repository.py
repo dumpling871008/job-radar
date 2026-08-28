@@ -64,9 +64,16 @@ def test_job_repository_upsert():
         assert saved_job.title == "測試資料工程師"
         assert saved_job.description == "需要 Python"
         assert saved_job.content_updated_at is None
+        assert (
+            saved_job.last_detail_checked_at
+            is not None
+        )
 
         original_first_seen_at = (
             saved_job.first_seen_at
+        )
+        original_detail_checked_at = (
+            saved_job.last_detail_checked_at
         )
 
 
@@ -87,6 +94,10 @@ def test_job_repository_upsert():
 
         assert result == "unchanged"
         assert saved_job.content_updated_at is None
+        assert (
+            saved_job.last_detail_checked_at
+            >= original_detail_checked_at
+        )
         assert (
             saved_job.first_seen_at
             == original_first_seen_at
@@ -137,6 +148,17 @@ def test_job_repository_upsert():
             updated_job.first_seen_at
             == original_first_seen_at
         )
+
+        batch_jobs = (
+            repository.find_by_source_job_ids(
+                [job_no, "missing-job-id"]
+            )
+        )
+
+        assert [
+            job.source_job_id
+            for job in batch_jobs
+        ] == [job_no]
 
     finally:
 

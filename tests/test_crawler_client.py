@@ -9,12 +9,18 @@ class FakeResponse:
         status_code,
         content_type="application/json",
         payload=None,
+        retry_after=None,
     ):
         self.status_code = status_code
 
         self.headers = {
             "Content-Type": content_type
         }
+
+        if retry_after is not None:
+            self.headers[
+                "Retry-After"
+            ] = retry_after
 
         self._payload = payload or {}
 
@@ -168,3 +174,38 @@ def test_detail_api_403_should_not_retry(
 
     # 403 應該第一次就停止
     assert call_count["count"] == 1
+
+
+def test_detail_api_429_respects_retry_after(
+    monkeypatch,
+):
+    responses = [
+        FakeResponse(
+            status_code=429,
+            retry_after="7",
+        ),
+        FakeResponse(
+            status_code=200,
+            payload={"data": {}},
+        ),
+    ]
+    waits = []
+
+    monkeypatch.setattr(
+        "app.crawler.client.requests.get",
+        lambda *args, **kwargs: (
+            responses.pop(0)
+        ),
+    )
+    monkeypatch.setattr(
+        "app.crawler.client.time.sleep",
+        waits.append,
+    )
+
+    _, attempt_count = fetch_job_detail(
+        "https://www.104.com.tw/job/abc123",
+        max_attempts=2,
+    )
+
+    assert attempt_count == 2
+    assert waits == [7.0]

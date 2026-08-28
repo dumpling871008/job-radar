@@ -130,6 +130,14 @@ class Job(Base):
         nullable=True,
     )
 
+    # 最近一次成功取得完整 Detail API 的時間
+    last_detail_checked_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     # DB 資料最後更新時間
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -1,5 +1,7 @@
 import requests
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 from app.config import (
     SEARCH_API_URL,
@@ -8,6 +10,58 @@ from app.config import (
     REQUEST_TIMEOUT,
     USER_AGENT,
 )
+
+
+class DetailFetchError(RuntimeError):
+
+    def __init__(
+        self,
+        message,
+        *,
+        attempt_count,
+        http_status=None,
+        retry_after=None,
+    ):
+        super().__init__(message)
+        self.attempt_count = attempt_count
+        self.http_status = http_status
+        self.retry_after = retry_after
+
+
+class DetailAccessForbiddenError(
+    DetailFetchError
+):
+    pass
+
+
+def parse_retry_after(value):
+    if not value:
+        return None
+
+    try:
+        return max(float(value), 0)
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        retry_at = parsedate_to_datetime(
+            value
+        )
+
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        return max(
+            (
+                retry_at
+                - datetime.now(timezone.utc)
+            ).total_seconds(),
+            0,
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def fetch_search_page(keyword, page):
@@ -75,11 +129,15 @@ def fetch_job_detail(
     }
 
     last_error = None
+    last_http_status = None
+    attempts_made = 0
 
     for attempt in range(
         1,
         max_attempts + 1,
     ):
+
+        attempts_made = attempt
 
         try:
 
@@ -98,33 +156,57 @@ def fetch_job_detail(
 
             # 403 不一直重試
             if response.status_code == 403:
-                raise RuntimeError(
-                    "Detail API 回傳 403"
+                raise DetailAccessForbiddenError(
+                    "Detail API 回傳 403",
+                    attempt_count=attempt,
+                    http_status=403,
                 )
 
-            # 429 或 5xx 可以稍後再試
-            if (
-                response.status_code == 429
-                or response.status_code >= 500
-            ):
+            # 429 優先尊重 Retry-After。
+            if response.status_code == 429:
+                raise DetailFetchError(
+                    "Detail API HTTP 429",
+                    attempt_count=attempt,
+                    http_status=429,
+                    retry_after=parse_retry_after(
+                        response.headers.get(
+                            "Retry-After"
+                        )
+                    ),
+                )
 
-                raise RuntimeError(
+            # 5xx 稍後使用 exponential backoff。
+            if response.status_code >= 500:
+
+                raise DetailFetchError(
                     f"Detail API HTTP "
-                    f"{response.status_code}"
+                    f"{response.status_code}",
+                    attempt_count=attempt,
+                    http_status=(
+                        response.status_code
+                    ),
                 )
 
             if response.status_code != 200:
-                raise RuntimeError(
+                raise DetailFetchError(
                     f"Detail API HTTP "
-                    f"{response.status_code}"
+                    f"{response.status_code}",
+                    attempt_count=attempt,
+                    http_status=(
+                        response.status_code
+                    ),
                 )
 
             if (
                 "application/json"
                 not in content_type
             ):
-                raise RuntimeError(
-                    "Detail API 回傳的不是 JSON"
+                raise DetailFetchError(
+                    "Detail API 回傳的不是 JSON",
+                    attempt_count=attempt,
+                    http_status=(
+                        response.status_code
+                    ),
                 )
 
             payload = response.json()
@@ -137,25 +219,33 @@ def fetch_job_detail(
                 attempt,
             )
 
+        except DetailAccessForbiddenError:
+            raise
+
         except (
             requests.RequestException,
-            RuntimeError,
+            DetailFetchError,
         ) as error:
 
             last_error = error
-
-            # 403 不繼續 retry
-            if (
-                "403"
-                in str(error)
-            ):
-                break
+            last_http_status = getattr(
+                error,
+                "http_status",
+                None,
+            )
 
             if attempt < max_attempts:
 
-                wait_seconds = (
-                    2 ** (attempt - 1)
+                wait_seconds = getattr(
+                    error,
+                    "retry_after",
+                    None,
                 )
+
+                if wait_seconds is None:
+                    wait_seconds = (
+                        2 ** (attempt - 1)
+                    )
 
                 print(
                     f"第 {attempt} 次失敗，"
@@ -166,7 +256,9 @@ def fetch_job_detail(
                     wait_seconds
                 )
 
-    raise RuntimeError(
+    raise DetailFetchError(
         f"Detail API 最終失敗："
-        f"{last_error}"
+        f"{last_error}",
+        attempt_count=attempts_made,
+        http_status=last_http_status,
     )
