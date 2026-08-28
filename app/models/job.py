@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     DateTime,
@@ -7,14 +8,31 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.db.base import Base
+
+
+if TYPE_CHECKING:
+    from app.models.job_application import (
+        JobApplication,
+    )
 
 
 class Job(Base):
 
     __tablename__ = "jobs"
+
+    application: Mapped[
+        "JobApplication | None"
+    ] = relationship(
+        back_populates="job",
+        uselist=False,
+    )
 
     # 資料庫自己的流水號
     id: Mapped[int] = mapped_column(

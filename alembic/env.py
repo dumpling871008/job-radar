@@ -5,6 +5,7 @@ from app.db.database import DATABASE_URL, engine
 from app.models.crawler_failure import CrawlerFailure
 from app.models.crawler_run import CrawlerRun
 from app.models.job import Job
+from app.models.job_application import JobApplication
 from app.models.raw_job import RawJob
 
 
@@ -42,4 +43,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

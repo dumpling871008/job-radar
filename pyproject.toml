@@ -11,6 +11,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "playwright>=1.62.0",
     "psycopg[binary]>=3.3.4",
+    "python-multipart>=0.0.20",
     "python-dotenv>=1.2.3",
     "requests>=2.34.2",
     "sqlalchemy>=2.0.52",

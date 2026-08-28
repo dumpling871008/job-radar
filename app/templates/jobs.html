@@ -51,6 +51,33 @@
         </nav>
 
 
+        <!-- ====================== -->
+        <!-- Application Status Filter -->
+        <!-- ====================== -->
+
+        <nav
+            class="application-status-filter"
+            aria-label="求職狀態"
+        >
+            <span class="filter-label">
+                求職狀態：
+            </span>
+
+            {% for status_value, label in application_status_labels.items() %}
+                <a
+                    class="application-status-filter__link{% if application_status == status_value %} active{% endif %}"
+                    href="{{ status_filter_urls[status_value] }}"
+                    data-status="{{ status_value }}"
+                    {% if application_status == status_value %}
+                        aria-current="page"
+                    {% endif %}
+                >
+                    {{ label }}
+                </a>
+            {% endfor %}
+        </nav>
+
+
 
         <!-- ====================== -->
         <!-- Search -->
@@ -66,6 +93,18 @@
                 type="hidden"
                 name="view"
                 value="{{ view }}"
+            >
+
+            <input
+                type="hidden"
+                name="status"
+                value="{{ application_status }}"
+            >
+
+            <input
+                type="hidden"
+                name="sort"
+                value="{{ sort }}"
             >
 
             <!-- 關鍵字 -->
@@ -283,6 +322,76 @@
                         {% endif %}
 
                     </div>
+
+
+                    <!-- Personal application status -->
+
+                    {% set current_status = job.application.status if job.application else "UNREAD" %}
+
+                    <section class="application-panel">
+                        <div class="application-panel__header">
+                            <span>個人求職狀態</span>
+                            <span class="application-badge application-badge--{{ current_status|lower }}">
+                                {{ application_status_labels[current_status] }}
+                            </span>
+                        </div>
+
+                        <form
+                            class="application-status-form"
+                            method="post"
+                            action="{{ url_for('update_job_status', job_id=job.id) }}"
+                        >
+                            <label
+                                class="visually-hidden"
+                                for="job-{{ job.id }}-status"
+                            >
+                                修改求職狀態
+                            </label>
+
+                            <select
+                                id="job-{{ job.id }}-status"
+                                name="status"
+                            >
+                                {% for status_value in application_statuses %}
+                                    <option
+                                        value="{{ status_value }}"
+                                        {% if current_status == status_value %}selected{% endif %}
+                                    >
+                                        {{ application_status_labels[status_value] }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+
+                            <button type="submit">
+                                更新狀態
+                            </button>
+
+                            {% include "job_application_redirect_fields.html" %}
+                        </form>
+
+                        <form
+                            class="application-note-form"
+                            method="post"
+                            action="{{ url_for('update_job_note', job_id=job.id) }}"
+                        >
+                            <label for="job-{{ job.id }}-note">
+                                備註
+                            </label>
+
+                            <textarea
+                                id="job-{{ job.id }}-note"
+                                name="note"
+                                rows="2"
+                                placeholder="記錄聯絡人、面試準備或其他資訊"
+                            >{{ job.application.note if job.application and job.application.note else "" }}</textarea>
+
+                            <button type="submit">
+                                儲存備註
+                            </button>
+
+                            {% include "job_application_redirect_fields.html" %}
+                        </form>
+                    </section>
 
 
                 </article>

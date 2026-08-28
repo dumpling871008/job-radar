@@ -3,19 +3,34 @@ from datetime import datetime, time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request, Query
+from fastapi import (
+    FastAPI,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import contains_eager
 
 from app.db.database import SessionLocal
 from app.models.job import Job
+from app.models.job_application import (
+    JobApplication,
+)
 from app.repositories.crawler_failure_repository import (
     CrawlerFailureRepository,
 )
 from app.repositories.crawler_run_repository import (
     CrawlerRunRepository,
+)
+from app.services.job_application_service import (
+    JOB_APPLICATION_STATUSES,
+    JobApplicationService,
 )
 
 
@@ -48,6 +63,15 @@ templates = Jinja2Templates(
 
 PAGE_SIZE = 20
 TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
+JOB_APPLICATION_STATUS_LABELS = {
+    "all": "全部",
+    "UNREAD": "未處理",
+    "SAVED": "收藏",
+    "APPLIED": "已投遞",
+    "INTERVIEW": "面試",
+    "REJECTED": "不考慮",
+    "CLOSED": "已結束",
+}
 
 
 def taipei_today_range():
@@ -115,6 +139,36 @@ def monitoring_pagination(
     }
 
 
+def dashboard_url(
+    base_url,
+    *,
+    view,
+    q,
+    location,
+    sort,
+    application_status,
+    page,
+):
+    parameters = {
+        "view": view,
+        "q": q,
+        "location": location,
+        "page": page,
+    }
+
+    if sort:
+        parameters["sort"] = sort
+
+    if application_status != "all":
+        parameters["status"] = (
+            application_status
+        )
+
+    return base_url.include_query_params(
+        **parameters
+    )
+
+
 @app.get("/")
 def home(
     request: Request,
@@ -139,10 +193,28 @@ def home(
     location: str = Query(
         default="",
     ),
+
+    sort: str = Query(
+        default="",
+    ),
+
+    application_status: Literal[
+        "all",
+        "UNREAD",
+        "SAVED",
+        "APPLIED",
+        "INTERVIEW",
+        "REJECTED",
+        "CLOSED",
+    ] = Query(
+        default="all",
+        alias="status",
+    ),
 ):
 
     q = q.strip()
     location = location.strip()
+    sort = sort.strip()
 
 
     with SessionLocal() as session:
@@ -245,12 +317,39 @@ def home(
             )
 
 
+        # 沒有 application record 的職缺
+        # 也視為尚未處理。
+        if application_status == "UNREAD":
+
+            filters.append(
+                or_(
+                    JobApplication.id.is_(
+                        None
+                    ),
+                    JobApplication.status
+                    == "UNREAD",
+                )
+            )
+
+        elif application_status != "all":
+
+            filters.append(
+                JobApplication.status
+                == application_status
+            )
+
+
         # =========================
         # 3. 計算符合條件的總筆數
         # =========================
 
-        count_statement = select(
-            func.count(Job.id)
+        count_statement = (
+            select(func.count(Job.id))
+            .outerjoin(
+                JobApplication,
+                JobApplication.job_id
+                == Job.id,
+            )
         )
 
 
@@ -301,7 +400,19 @@ def home(
         # 6. 查詢職缺
         # =========================
 
-        statement = select(Job)
+        statement = (
+            select(Job)
+            .outerjoin(
+                JobApplication,
+                JobApplication.job_id
+                == Job.id,
+            )
+            .options(
+                contains_eager(
+                    Job.application
+                )
+            )
+        )
 
 
         if filters:
@@ -336,39 +447,69 @@ def home(
         "home"
     )
 
-    all_view_url = (
-        home_url.include_query_params(
-            view="all",
-            q=q,
-            location=location,
-            page=1,
-        )
+    all_view_url = dashboard_url(
+        home_url,
+        view="all",
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            application_status
+        ),
+        page=1,
     )
 
-    today_view_url = (
-        home_url.include_query_params(
-            view="today",
-            q=q,
-            location=location,
-            page=1,
-        )
+    today_view_url = dashboard_url(
+        home_url,
+        view="today",
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            application_status
+        ),
+        page=1,
     )
 
-    updated_view_url = (
-        home_url.include_query_params(
-            view="updated",
-            q=q,
-            location=location,
-            page=1,
-        )
+    updated_view_url = dashboard_url(
+        home_url,
+        view="updated",
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            application_status
+        ),
+        page=1,
     )
 
-    clear_url = (
-        home_url.include_query_params(
+    clear_url = dashboard_url(
+        home_url,
+        view=view,
+        q="",
+        location="",
+        sort=sort,
+        application_status=(
+            application_status
+        ),
+        page=1,
+    )
+
+    status_filter_urls = {
+        status: dashboard_url(
+            home_url,
             view=view,
+            q=q,
+            location=location,
+            sort=sort,
+            application_status=status,
             page=1,
         )
-    )
+        for status in (
+            "all",
+            *JOB_APPLICATION_STATUSES,
+        )
+    }
 
     previous_url = None
     next_url = None
@@ -376,25 +517,31 @@ def home(
 
     if page > 1:
 
-        previous_url = (
-            home_url.include_query_params(
-                view=view,
-                q=q,
-                location=location,
-                page=page - 1,
-            )
+        previous_url = dashboard_url(
+            home_url,
+            view=view,
+            q=q,
+            location=location,
+            sort=sort,
+            application_status=(
+                application_status
+            ),
+            page=page - 1,
         )
 
 
     if page < total_pages:
 
-        next_url = (
-            home_url.include_query_params(
-                view=view,
-                q=q,
-                location=location,
-                page=page + 1,
-            )
+        next_url = dashboard_url(
+            home_url,
+            view=view,
+            q=q,
+            location=location,
+            sort=sort,
+            application_status=(
+                application_status
+            ),
+            page=page + 1,
         )
 
 
@@ -412,6 +559,19 @@ def home(
             "q": q,
             "location": location,
             "locations": locations,
+            "sort": sort,
+            "application_status": (
+                application_status
+            ),
+            "application_statuses": (
+                JOB_APPLICATION_STATUSES
+            ),
+            "application_status_labels": (
+                JOB_APPLICATION_STATUS_LABELS
+            ),
+            "status_filter_urls": (
+                status_filter_urls
+            ),
 
             "all_view_url": all_view_url,
             "today_view_url": today_view_url,
@@ -420,6 +580,126 @@ def home(
             "previous_url": previous_url,
             "next_url": next_url,
         },
+    )
+
+
+def job_dashboard_redirect(
+    request,
+    *,
+    view,
+    q,
+    location,
+    sort,
+    application_status,
+    page,
+):
+    return RedirectResponse(
+        url=str(
+            dashboard_url(
+                request.url_for("home"),
+                view=view,
+                q=q,
+                location=location,
+                sort=sort,
+                application_status=(
+                    application_status
+                ),
+                page=page,
+            )
+        ),
+        status_code=303,
+    )
+
+
+@app.post("/jobs/{job_id}/status")
+def update_job_status(
+    job_id: int,
+    request: Request,
+    status: str = Form(...),
+    view: str = Form("all"),
+    q: str = Form(""),
+    location: str = Form(""),
+    sort: str = Form(""),
+    page: int = Form(1),
+    filter_status: str = Form("all"),
+):
+    with SessionLocal() as session:
+        service = JobApplicationService(
+            session
+        )
+
+        try:
+            service.update_status(
+                job_id,
+                status,
+            )
+            session.commit()
+        except ValueError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail=str(error),
+            ) from error
+        except LookupError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail=str(error),
+            ) from error
+
+    return job_dashboard_redirect(
+        request,
+        view=view,
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            filter_status
+        ),
+        page=max(page, 1),
+    )
+
+
+@app.post("/jobs/{job_id}/note")
+def update_job_note(
+    job_id: int,
+    request: Request,
+    note: str = Form(""),
+    view: str = Form("all"),
+    q: str = Form(""),
+    location: str = Form(""),
+    sort: str = Form(""),
+    page: int = Form(1),
+    filter_status: str = Form("all"),
+):
+    with SessionLocal() as session:
+        service = JobApplicationService(
+            session
+        )
+
+        try:
+            service.update_note(
+                job_id,
+                note,
+            )
+            session.commit()
+        except LookupError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail=str(error),
+            ) from error
+
+    return job_dashboard_redirect(
+        request,
+        view=view,
+        q=q,
+        location=location,
+        sort=sort,
+        application_status=(
+            filter_status
+        ),
+        page=max(page, 1),
     )
 
 

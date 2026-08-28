@@ -243,6 +243,50 @@ h1 {
 
 
 /* =========================
+   Application Status Filter
+========================= */
+
+.application-status-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+
+    margin-bottom: 18px;
+}
+
+.filter-label {
+    margin-right: 3px;
+    color: #666;
+    font-size: 14px;
+}
+
+.application-status-filter__link {
+    padding: 7px 11px;
+
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: white;
+
+    color: #555;
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.application-status-filter__link:hover {
+    border-color: #999;
+    color: #222;
+}
+
+.application-status-filter__link.active {
+    border-color: #222;
+    background: #222;
+    color: white;
+    font-weight: 600;
+}
+
+
+/* =========================
    Search
 ========================= */
 
@@ -587,5 +631,152 @@ h1 {
 
     .monitor-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+
+/* =========================
+   Job Application Editor
+========================= */
+
+.application-panel {
+    margin-top: 18px;
+    padding-top: 16px;
+
+    border-top: 1px solid #eee;
+}
+
+.application-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    margin-bottom: 12px;
+
+    color: #444;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.application-badge {
+    display: inline-flex;
+    align-items: center;
+
+    padding: 4px 9px;
+
+    border-radius: 999px;
+    background: #eceff3;
+
+    color: #4d5661;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.application-badge--saved {
+    background: #fff3d6;
+    color: #8a5b00;
+}
+
+.application-badge--applied,
+.application-badge--interview {
+    background: #e7f0ff;
+    color: #245da8;
+}
+
+.application-badge--rejected {
+    background: #fde8e8;
+    color: #a62424;
+}
+
+.application-badge--closed {
+    background: #e5f6eb;
+    color: #18743c;
+}
+
+.application-status-form,
+.application-note-form {
+    display: flex;
+    gap: 9px;
+}
+
+.application-status-form {
+    margin-bottom: 12px;
+}
+
+.application-status-form select,
+.application-note-form textarea {
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: white;
+
+    color: #333;
+    font: inherit;
+}
+
+.application-status-form select {
+    min-width: 130px;
+    height: 38px;
+    padding: 0 10px;
+}
+
+.application-note-form {
+    align-items: flex-end;
+}
+
+.application-note-form label {
+    align-self: center;
+    color: #666;
+    font-size: 13px;
+}
+
+.application-note-form textarea {
+    flex: 1;
+    min-height: 58px;
+    padding: 9px 11px;
+    resize: vertical;
+}
+
+.application-status-form button,
+.application-note-form button {
+    min-height: 38px;
+    padding: 0 14px;
+
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: white;
+
+    color: #333;
+    cursor: pointer;
+}
+
+.application-status-form button:hover,
+.application-note-form button:hover {
+    border-color: #777;
+    background: #f7f7f7;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 600px) {
+    .application-status-form,
+    .application-note-form {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .application-status-form button,
+    .application-note-form button {
+        height: 40px;
     }
 }

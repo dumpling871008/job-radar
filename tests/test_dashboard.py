@@ -1,6 +1,10 @@
 import asyncio
 from datetime import datetime, time, timedelta
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import (
+    parse_qs,
+    urlencode,
+    urlsplit,
+)
 from uuid import uuid4
 
 import pytest
@@ -103,10 +107,27 @@ def dashboard_jobs():
         session.commit()
 
 
-def get_dashboard(path):
+def request_app(
+    path,
+    *,
+    method="GET",
+    data=None,
+):
     parsed_url = urlsplit(path)
     messages = []
     request_sent = False
+    body = urlencode(
+        data or {}
+    ).encode()
+    headers = []
+
+    if data is not None:
+        headers.append(
+            (
+                b"content-type",
+                b"application/x-www-form-urlencoded",
+            )
+        )
 
     scope = {
         "type": "http",
@@ -115,13 +136,13 @@ def get_dashboard(path):
             "spec_version": "2.3",
         },
         "http_version": "1.1",
-        "method": "GET",
+        "method": method,
         "scheme": "http",
         "path": parsed_url.path,
         "raw_path": parsed_url.path.encode(),
         "query_string": parsed_url.query.encode(),
         "root_path": "",
-        "headers": [],
+        "headers": headers,
         "client": ("testclient", 50000),
         "server": ("testserver", 80),
     }
@@ -133,7 +154,7 @@ def get_dashboard(path):
             request_sent = True
             return {
                 "type": "http.request",
-                "body": b"",
+                "body": body,
                 "more_body": False,
             }
 
@@ -162,7 +183,21 @@ def get_dashboard(path):
         == "http.response.body"
     )
 
-    return start["status"], body.decode()
+    response_headers = {
+        key.decode().lower(): value.decode()
+        for key, value in start["headers"]
+    }
+
+    return (
+        start["status"],
+        body.decode(),
+        response_headers,
+    )
+
+
+def get_dashboard(path):
+    status, body, _ = request_app(path)
+    return status, body
 
 
 def test_all_view_returns_successfully(
