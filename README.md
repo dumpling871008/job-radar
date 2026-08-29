@@ -268,9 +268,11 @@ docker compose run --rm web uv run alembic upgrade head
 ### 4. 啟動 Docker Web
 
 ```powershell
-docker compose up -d web
+docker compose up web
 Invoke-RestMethod http://localhost:8080/health
 ```
+
+瀏覽器開啟 <http://localhost:8080>；health endpoint 位於 <http://localhost:8080/health>。需要背景執行時可改用 `docker compose up -d web`。
 
 預設 production command 是：
 
@@ -309,6 +311,12 @@ docker run --rm `
 
 ```powershell
 docker compose config
+```
+
+### 7. 停止 containers
+
+```powershell
+docker compose down
 ```
 
 不要使用 `docker compose down -v`，因為 `-v` 會刪除保存 PostgreSQL 資料的 named volume。
