@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Integer,
     String,
@@ -12,6 +13,9 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
+)
+from sqlalchemy.dialects.postgresql import (
+    JSONB,
 )
 
 from app.db.base import Base
@@ -26,6 +30,17 @@ if TYPE_CHECKING:
 class Job(Base):
 
     __tablename__ = "jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "job_category IN ("
+            "'SOFTWARE', 'AI_DATA', "
+            "'DEVOPS_CLOUD', "
+            "'OTHER_ENGINEERING', "
+            "'NON_TECH', 'UNKNOWN'"
+            ")",
+            name="ck_jobs_job_category",
+        ),
+    )
 
     application: Mapped[
         "JobApplication | None"
@@ -84,6 +99,28 @@ class Job(Base):
     description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    # Clean layer 的職缺領域分類
+    job_category: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="UNKNOWN",
+        server_default="UNKNOWN",
+    )
+
+    # Detail API 提供的原始薪資顯示文字
+    salary_text: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    # 由 title / description deterministic 擷取的技術標籤
+    tech_stack: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
     )
 
     # 原始職缺網址

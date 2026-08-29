@@ -13,12 +13,14 @@ class CrawlerRunRepository:
         self,
         run_id,
         trigger_type="MANUAL",
+        config_snapshot=None,
     ):
 
         crawler_run = CrawlerRun(
             run_id=run_id,
             trigger_type=trigger_type,
             status="RUNNING",
+            config_snapshot=config_snapshot,
         )
 
         self.session.add(

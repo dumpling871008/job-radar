@@ -56,6 +56,16 @@
             >
                 Failures
             </a>
+
+            <a
+                class="main-nav-link{% if active_page == 'crawler_settings' %} active{% endif %}"
+                href="{{ url_for('crawler_settings') }}"
+                {% if active_page == "crawler_settings" %}
+                    aria-current="page"
+                {% endif %}
+            >
+                Crawler Settings
+            </a>
         </nav>
 
         {% block content %}{% endblock %}

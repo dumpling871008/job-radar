@@ -12,6 +12,7 @@ def build_run(
     *,
     finished=True,
     error_message=None,
+    config_snapshot=None,
 ):
     return SimpleNamespace(
         run_id=f"run-{status.lower()}",
@@ -45,6 +46,7 @@ def build_run(
         updated_count=3,
         unchanged_count=10,
         error_message=error_message,
+        config_snapshot=config_snapshot,
     )
 
 
@@ -156,7 +158,21 @@ def test_runs_render_statuses(
     monkeypatch,
 ):
     runs = [
-        build_run("SUCCESS"),
+        build_run(
+            "SUCCESS",
+            config_snapshot={
+                "keywords": [
+                    {
+                        "keyword": "Python 工程師",
+                        "target_count": 30,
+                    }
+                ],
+                "max_detail_fetches": 80,
+                "max_search_pages_per_keyword": 8,
+                "detail_refresh_hours": 48,
+                "request_interval_seconds": 2.0,
+            },
+        ),
         build_run(
             "FAILED",
             error_message="Detail API failed",
@@ -183,6 +199,8 @@ def test_runs_render_statuses(
     assert "status-badge--running" in html
     assert "執行中" in html
     assert "Detail API failed" in html
+    assert "查看執行設定" in html
+    assert "Python 工程師" in html
 
 
 def test_failures_empty_returns_200(

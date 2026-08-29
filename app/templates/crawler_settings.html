@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Crawler Settings | Job Radar{% endblock %}
+
+{% block content %}
+    <section class="settings-header">
+        <h2>Crawler Settings</h2>
+        <p>
+            增加搜尋頁數與抓取數量會增加來源網站請求量，建議逐步調整。
+        </p>
+    </section>
+
+    {% if message %}
+        <div class="dashboard-message dashboard-message--success" role="status">
+            設定已儲存。
+        </div>
+    {% endif %}
+
+    <section class="settings-panel">
+        <h3>Crawler Parameters</h3>
+        <form class="settings-form" method="post" action="{{ url_for('update_crawler_settings') }}">
+            <label>
+                <span>每次最多 Detail</span>
+                <input name="max_detail_fetches" type="number" min="1" max="500" required value="{{ settings.max_detail_fetches }}">
+            </label>
+            <label>
+                <span>每個關鍵字最多搜尋頁數</span>
+                <input name="max_search_pages_per_keyword" type="number" min="1" max="20" required value="{{ settings.max_search_pages_per_keyword }}">
+            </label>
+            <label>
+                <span>舊職缺重新檢查（小時）</span>
+                <input name="detail_refresh_hours" type="number" min="1" max="720" required value="{{ settings.detail_refresh_hours }}">
+            </label>
+            <label>
+                <span>Request 間隔（秒）</span>
+                <input name="request_interval_seconds" type="number" min="1" step="0.1" required value="{{ settings.request_interval_seconds }}">
+            </label>
+            <button type="submit">儲存參數</button>
+        </form>
+    </section>
+
+    <section class="settings-panel">
+        <h3>Search Keywords</h3>
+
+        <div class="keyword-table-wrap">
+            <table class="keyword-table">
+                <thead>
+                    <tr>
+                        <th>啟用</th>
+                        <th>Keyword</th>
+                        <th>Target Count</th>
+                        <th>排序</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in keywords %}
+                        <tr>
+                            <td>
+                                <input form="keyword-{{ item.id }}" name="enabled" type="checkbox" value="true" {% if item.enabled %}checked{% endif %} aria-label="啟用 {{ item.keyword }}">
+                            </td>
+                            <td>
+                                <input form="keyword-{{ item.id }}" name="keyword" required value="{{ item.keyword }}">
+                            </td>
+                            <td>
+                                <input form="keyword-{{ item.id }}" name="target_count" type="number" min="1" max="500" required value="{{ item.target_count }}">
+                            </td>
+                            <td>
+                                <input form="keyword-{{ item.id }}" name="sort_order" type="number" required value="{{ item.sort_order }}">
+                            </td>
+                            <td class="keyword-actions">
+                                <form id="keyword-{{ item.id }}" method="post" action="{{ url_for('update_crawler_keyword', keyword_id=item.id) }}">
+                                    <button type="submit">儲存</button>
+                                </form>
+                                <form method="post" action="{{ url_for('delete_crawler_keyword', keyword_id=item.id) }}">
+                                    <button class="danger-button" type="submit">刪除</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <form class="add-keyword-form" method="post" action="{{ url_for('add_crawler_keyword') }}">
+            <label>
+                <span>啟用</span>
+                <input name="enabled" type="checkbox" value="true" checked>
+            </label>
+            <label>
+                <span>Keyword</span>
+                <input name="keyword" required placeholder="例如：Python 工程師">
+            </label>
+            <label>
+                <span>Target Count</span>
+                <input name="target_count" type="number" min="1" max="500" required value="20">
+            </label>
+            <label>
+                <span>排序</span>
+                <input name="sort_order" type="number" required value="100">
+            </label>
+            <button type="submit">新增 Keyword</button>
+        </form>
+    </section>
+{% endblock %}

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     DateTime,
@@ -12,6 +13,7 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.db.base import Base
 
@@ -105,5 +107,12 @@ class CrawlerRun(Base):
 
     error_message: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
+    )
+
+    config_snapshot: Mapped[
+        dict[str, Any] | None
+    ] = mapped_column(
+        JSONB,
         nullable=True,
     )

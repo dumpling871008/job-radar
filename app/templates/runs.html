@@ -33,13 +33,13 @@
                     </div>
                     <div>
                         <dt>Started</dt>
-                        <dd>{{ run.started_at }}</dd>
+                        <dd>{{ run.started_at|datetime_taipei }}</dd>
                     </div>
                     <div>
                         <dt>Finished</dt>
                         <dd>
                             {% if run.finished_at %}
-                                {{ run.finished_at }}
+                                {{ run.finished_at|datetime_taipei }}
                             {% else %}
                                 執行中
                             {% endif %}
@@ -84,6 +84,26 @@
                         <strong>Error</strong>
                         <p>{{ run.error_message }}</p>
                     </div>
+                {% endif %}
+
+                {% if run.config_snapshot %}
+                    <details class="run-config">
+                        <summary>查看執行設定</summary>
+                        <dl>
+                            <div><dt>Detail 上限</dt><dd>{{ run.config_snapshot.max_detail_fetches }}</dd></div>
+                            <div><dt>每 keyword 頁數</dt><dd>{{ run.config_snapshot.max_search_pages_per_keyword }}</dd></div>
+                            <div><dt>Refresh</dt><dd>{{ run.config_snapshot.detail_refresh_hours }} 小時</dd></div>
+                            <div><dt>Request 間隔</dt><dd>{{ run.config_snapshot.request_interval_seconds }} 秒</dd></div>
+                        </dl>
+                        <p>
+                            Keywords：
+                            {% for item in run.config_snapshot.keywords %}
+                                {{ item.keyword }}（{{ item.target_count }}）{% if not loop.last %}、{% endif %}
+                            {% else %}
+                                無啟用 keyword
+                            {% endfor %}
+                        </p>
+                    </details>
                 {% endif %}
             </article>
         {% else %}

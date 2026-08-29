@@ -1,6 +1,9 @@
 from uuid import uuid4
 
 from app.crawler.transform import generate_content_hash
+from app.crawler.tech_extractor import (
+    extract_tech_stack,
+)
 from app.db.database import SessionLocal
 from app.repositories.job_repository import JobRepository
 
@@ -19,7 +22,13 @@ def build_test_job(
         "description": description,
         "experience": "1年以上",
         "education": "大學以上",
+        "salary_text": "月薪45,000元以上",
     }
+
+    job["tech_stack"] = extract_tech_stack(
+        job["job_name"],
+        job["description"],
+    )
 
     job["content_hash"] = generate_content_hash(job)
 
@@ -64,6 +73,12 @@ def test_job_repository_upsert():
         assert saved_job.title == "測試資料工程師"
         assert saved_job.description == "需要 Python"
         assert saved_job.content_updated_at is None
+        assert saved_job.salary_text == (
+            "月薪45,000元以上"
+        )
+        assert saved_job.tech_stack == [
+            "Python"
+        ]
         assert (
             saved_job.last_detail_checked_at
             is not None

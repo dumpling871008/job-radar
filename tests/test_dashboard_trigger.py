@@ -58,6 +58,9 @@ def test_crawler_run_post_redirects_and_runs_background(
             "sort": "first_seen",
             "page": "2",
             "filter_status": "SAVED",
+            "category": "AI_DATA",
+            "tech": "Python",
+            "experience": "THREE_TO_FIVE",
         },
     )
     query = parse_qs(
@@ -80,6 +83,9 @@ def test_crawler_run_post_redirects_and_runs_background(
         "location": ["台北市"],
         "sort": ["first_seen"],
         "status": ["SAVED"],
+        "category": ["AI_DATA"],
+        "tech": ["Python"],
+        "experience": ["THREE_TO_FIVE"],
         "page": ["2"],
         "message": ["crawler_started"],
     }
@@ -118,6 +124,9 @@ def test_crawler_run_post_does_not_queue_when_locked(
     assert calls == []
     assert query["message"] == [
         "crawler_already_running"
+    ]
+    assert query["category"] == [
+        "relevant"
     ]
 
 

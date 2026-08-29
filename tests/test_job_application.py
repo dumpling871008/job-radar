@@ -29,6 +29,7 @@ def make_job(marker, suffix="job"):
         company_name="求職狀態測試公司",
         location="測試市測試區",
         description="Python dashboard test",
+        job_category="SOFTWARE",
         url=(
             "https://www.104.com.tw/job/"
             f"application-{suffix}"
@@ -369,6 +370,9 @@ def test_status_redirect_preserves_query_parameters(
             "sort": "first_seen",
             "page": "2",
             "filter_status": "UNREAD",
+            "category": "SOFTWARE",
+            "tech": "Python",
+            "experience": "ONE_TO_THREE",
         },
     )
     query = parse_qs(
@@ -384,5 +388,8 @@ def test_status_redirect_preserves_query_parameters(
         "location": ["測試市"],
         "sort": ["first_seen"],
         "status": ["UNREAD"],
+        "category": ["SOFTWARE"],
+        "tech": ["Python"],
+        "experience": ["ONE_TO_THREE"],
         "page": ["2"],
     }

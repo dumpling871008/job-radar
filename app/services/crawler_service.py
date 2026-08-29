@@ -5,13 +5,6 @@ from datetime import (
     timezone,
 )
 
-from app.config import (
-    DETAIL_REFRESH_HOURS,
-    MAX_DETAIL_FETCHES,
-    MAX_SEARCH_PAGES_PER_KEYWORD,
-    REQUEST_INTERVAL_SECONDS,
-    SEARCH_QUOTAS,
-)
 from app.crawler.client import (
     DetailAccessForbiddenError,
     fetch_job_detail,
@@ -49,6 +42,7 @@ def select_detail_candidates(
     search_jobs,
     existing_jobs,
     *,
+    detail_refresh_hours,
     now=None,
     max_candidates=None,
 ):
@@ -56,7 +50,7 @@ def select_detail_candidates(
         timezone.utc
     )
     stale_before = now - timedelta(
-        hours=DETAIL_REFRESH_HOURS
+        hours=detail_refresh_hours
     )
     candidates = []
     stats = {
@@ -133,7 +127,20 @@ def save_search_failure(
     )
 
 
-def collect_detail_candidates(run_id):
+def collect_detail_candidates(
+    run_id,
+    runtime_config,
+):
+    keywords = runtime_config["keywords"]
+    max_detail_fetches = runtime_config[
+        "max_detail_fetches"
+    ]
+    max_search_pages = runtime_config[
+        "max_search_pages_per_keyword"
+    ]
+    detail_refresh_hours = runtime_config[
+        "detail_refresh_hours"
+    ]
     candidate_jobs = []
     seen_job_ids = set()
     keyword_counts = {}
@@ -145,9 +152,11 @@ def collect_detail_candidates(run_id):
         "fresh_skipped_count": 0,
     }
 
-    for keyword, quota in (
-        SEARCH_QUOTAS.items()
-    ):
+    for keyword_config in keywords:
+        keyword = keyword_config["keyword"]
+        quota = keyword_config[
+            "target_count"
+        ]
         keyword_candidate_count = 0
 
         if quota <= 0:
@@ -162,12 +171,12 @@ def collect_detail_candidates(run_id):
 
         for page in range(
             1,
-            MAX_SEARCH_PAGES_PER_KEYWORD
+            max_search_pages
             + 1,
         ):
             if (
                 len(candidate_jobs)
-                >= MAX_DETAIL_FETCHES
+                >= max_detail_fetches
                 or keyword_candidate_count
                 >= quota
             ):
@@ -236,7 +245,7 @@ def collect_detail_candidates(run_id):
                 unique_job_ids
             )
             remaining_budget = min(
-                MAX_DETAIL_FETCHES
+                max_detail_fetches
                 - len(candidate_jobs),
                 quota
                 - keyword_candidate_count,
@@ -247,6 +256,9 @@ def collect_detail_candidates(run_id):
                     existing_jobs,
                     max_candidates=(
                         remaining_budget
+                    ),
+                    detail_refresh_hours=(
+                        detail_refresh_hours
                     ),
                 )
             )
@@ -277,7 +289,7 @@ def collect_detail_candidates(run_id):
 
         if (
             len(candidate_jobs)
-            >= MAX_DETAIL_FETCHES
+            >= max_detail_fetches
         ):
             break
 
@@ -313,11 +325,20 @@ def record_detail_failure(
     )
 
 
-def crawl_jobs(run_id):
+def crawl_jobs(
+    run_id,
+    runtime_config,
+):
     selected_jobs, selection_stats = (
         collect_detail_candidates(
-            run_id
+            run_id,
+            runtime_config,
         )
+    )
+    request_interval_seconds = (
+        runtime_config[
+            "request_interval_seconds"
+        ]
     )
 
     print("=" * 50)
@@ -358,10 +379,10 @@ def crawl_jobs(run_id):
 
         if (
             detail_attempted_count > 0
-            and REQUEST_INTERVAL_SECONDS > 0
+            and request_interval_seconds > 0
         ):
             time.sleep(
-                REQUEST_INTERVAL_SECONDS
+                request_interval_seconds
             )
 
         detail_attempted_count += 1

@@ -45,6 +45,14 @@ def dashboard_jobs():
                 company_name="Dashboard 測試公司",
                 location=location,
                 description="Dashboard route test",
+                job_category="SOFTWARE",
+                tech_stack=["Python"],
+                salary_text=(
+                    "月薪45,000~60,000元"
+                    if index == 0
+                    else None
+                ),
+                experience="1年以上",
                 url=(
                     "https://www.104.com.tw/job/"
                     f"dashboard-{index}"
@@ -72,6 +80,9 @@ def dashboard_jobs():
             company_name="Dashboard 測試公司",
             location=location,
             description="Dashboard route test",
+            job_category="SOFTWARE",
+            tech_stack=["Python"],
+            experience="1年以上",
             url=(
                 "https://www.104.com.tw/job/"
                 "dashboard-old"
@@ -224,6 +235,7 @@ def test_all_view_returns_successfully(
         "Jobs",
         "Crawler Runs",
         "Failures",
+        "Crawler Settings",
     ]
     assert "共 22 筆職缺" in (
         soup.select_one(
@@ -345,6 +357,7 @@ def test_q_location_and_view_can_coexist(
         "view": ["all"],
         "q": [marker],
         "location": ["測試市"],
+        "category": ["relevant"],
         "page": ["1"],
     }
 
@@ -356,7 +369,10 @@ def test_pagination_keeps_dashboard_filters(
 
     status, html = get_dashboard(
         f"/?view=all&q={marker}&location="
-        "%E6%B8%AC%E8%A9%A6%E5%B8%82&page=1"
+        "%E6%B8%AC%E8%A9%A6%E5%B8%82"
+        "&status=UNREAD&sort=first_seen"
+        "&category=relevant&tech=Python"
+        "&experience=ONE_TO_THREE&page=1"
     )
     soup = BeautifulSoup(
         html,
@@ -380,5 +396,381 @@ def test_pagination_keeps_dashboard_filters(
         "view": ["all"],
         "q": [marker],
         "location": ["測試市"],
+        "sort": ["first_seen"],
+        "tech": ["Python"],
+        "experience": ["ONE_TO_THREE"],
+        "status": ["UNREAD"],
+        "category": ["relevant"],
         "page": ["2"],
     }
+
+
+@pytest.fixture
+def categorized_dashboard_jobs():
+    marker = uuid4().hex
+    source_marker = marker[:12]
+    now = datetime.now(
+        TAIPEI_TIMEZONE
+    )
+    category_labels = (
+        ("SOFTWARE", "軟體職缺"),
+        ("AI_DATA", "資料職缺"),
+        ("DEVOPS_CLOUD", "雲端職缺"),
+        (
+            "OTHER_ENGINEERING",
+            "傳統工程職缺",
+        ),
+        ("NON_TECH", "非技術職缺"),
+        ("UNKNOWN", "未分類職缺"),
+    )
+    titles = {
+        category: f"{marker} {label}"
+        for category, label in category_labels
+    }
+    tech_stacks = {
+        "SOFTWARE": [
+            "Python",
+            "FastAPI",
+            "PostgreSQL",
+        ],
+        "AI_DATA": [
+            "Python",
+            "GCP",
+            "Docker",
+            "Kubernetes",
+            "LLM",
+            "RAG",
+        ],
+        "DEVOPS_CLOUD": [
+            "GCP",
+            "Docker",
+        ],
+        "OTHER_ENGINEERING": ["Java"],
+        "NON_TECH": [],
+        "UNKNOWN": [],
+    }
+    experience_values = {
+        "SOFTWARE": "1年以上",
+        "AI_DATA": "3年以上",
+        "DEVOPS_CLOUD": "5年以上",
+        "OTHER_ENGINEERING": "不拘",
+        "NON_TECH": None,
+        "UNKNOWN": None,
+    }
+    jobs = [
+        Job(
+            source="104",
+            source_job_id=(
+                f"cat-{source_marker}-{category}"
+            ),
+            title=f"{marker} {label}",
+            company_name="分類測試公司",
+            location="分類市測試區",
+            description="category route test",
+            job_category=category,
+            tech_stack=tech_stacks[
+                category
+            ],
+            salary_text=(
+                "待遇面議"
+                if category == "AI_DATA"
+                else None
+            ),
+            experience=experience_values[
+                category
+            ],
+            url=(
+                "https://www.104.com.tw/job/"
+                f"category-{category}"
+            ),
+            first_seen_at=now,
+            content_updated_at=now,
+        )
+        for category, label in category_labels
+    ]
+
+    with SessionLocal() as session:
+        session.add_all(jobs)
+        session.commit()
+
+    yield {
+        "marker": marker,
+        "source_marker": source_marker,
+        "titles": titles,
+    }
+
+    with SessionLocal() as session:
+        session.execute(
+            delete(Job).where(
+                Job.source_job_id.startswith(
+                    f"cat-{source_marker}-"
+                )
+            )
+        )
+        session.commit()
+
+
+def test_relevant_category_excludes_unrelated_jobs(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        f"/?category=relevant&q={marker}"
+    )
+
+    assert status == 200
+    assert titles["SOFTWARE"] in html
+    assert titles["AI_DATA"] in html
+    assert titles["DEVOPS_CLOUD"] in html
+    assert titles["OTHER_ENGINEERING"] not in html
+    assert titles["NON_TECH"] not in html
+    assert titles["UNKNOWN"] not in html
+
+
+def test_other_engineering_category_is_available(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        "/?category=OTHER_ENGINEERING"
+        f"&q={marker}"
+    )
+
+    assert status == 200
+    assert titles["OTHER_ENGINEERING"] in html
+    assert titles["SOFTWARE"] not in html
+
+
+def test_all_category_includes_every_category(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        f"/?category=all&q={marker}"
+    )
+
+    assert status == 200
+    assert all(
+        title in html
+        for title in titles.values()
+    )
+
+
+def test_category_coexists_with_dashboard_filters(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+
+    status, html = get_dashboard(
+        "/?category=AI_DATA&view=today"
+        "&status=UNREAD&location="
+        "%E5%88%86%E9%A1%9E%E5%B8%82"
+        f"&q={marker}&sort=first_seen&page=1"
+    )
+    soup = BeautifulSoup(
+        html,
+        "html.parser",
+    )
+
+    assert status == 200
+    assert (
+        categorized_dashboard_jobs[
+            "titles"
+        ]["AI_DATA"]
+        in html
+    )
+    assert soup.select_one(
+        'input[name="category"]'
+    )["value"] == "AI_DATA"
+    assert soup.select_one(
+        '.category-filter__link.active'
+    )["data-category"] == "AI_DATA"
+
+    software_query = parse_qs(
+        urlsplit(
+            soup.select_one(
+                '[data-category="SOFTWARE"]'
+            )["href"]
+        ).query,
+        keep_blank_values=True,
+    )
+    assert software_query == {
+        "view": ["today"],
+        "q": [marker],
+        "location": ["分類市"],
+        "sort": ["first_seen"],
+        "status": ["UNREAD"],
+        "category": ["SOFTWARE"],
+        "page": ["1"],
+    }
+
+
+def test_tech_filter_only_shows_matching_jobs(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        f"/?category=all&tech=Python&q={marker}"
+    )
+
+    assert status == 200
+    assert titles["SOFTWARE"] in html
+    assert titles["AI_DATA"] in html
+    assert titles["DEVOPS_CLOUD"] not in html
+    assert titles["OTHER_ENGINEERING"] not in html
+
+
+def test_tech_and_category_filters_coexist(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        "/?category=AI_DATA&tech=Python"
+        f"&q={marker}"
+    )
+
+    assert status == 200
+    assert titles["AI_DATA"] in html
+    assert titles["SOFTWARE"] not in html
+
+
+def test_tech_location_and_q_filters_coexist(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+
+    status, html = get_dashboard(
+        "/?category=all&tech=GCP&location="
+        "%E5%88%86%E9%A1%9E%E5%B8%82"
+        f"&q={marker}"
+    )
+
+    assert status == 200
+    assert (
+        categorized_dashboard_jobs[
+            "titles"
+        ]["AI_DATA"]
+        in html
+    )
+
+
+def test_experience_filter_uses_normalized_bucket(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    titles = categorized_dashboard_jobs[
+        "titles"
+    ]
+
+    status, html = get_dashboard(
+        "/?category=all"
+        "&experience=THREE_TO_FIVE"
+        f"&q={marker}"
+    )
+
+    assert status == 200
+    assert titles["AI_DATA"] in html
+    assert titles["SOFTWARE"] not in html
+
+
+def test_salary_text_and_null_are_rendered(
+    dashboard_jobs,
+):
+    marker = dashboard_jobs["marker"]
+
+    salary_status, salary_html = (
+        get_dashboard(
+            "/?q="
+            f"{marker}%20%E6%B8%AC%E8%A9%A6"
+            "%E8%81%B7%E7%BC%BA%200"
+        )
+    )
+    null_status, null_html = get_dashboard(
+        "/?q="
+        f"{marker}%20%E6%B8%AC%E8%A9%A6"
+        "%E8%81%B7%E7%BC%BA%201"
+    )
+
+    assert salary_status == 200
+    assert "薪資：月薪45,000~60,000元" in (
+        salary_html
+    )
+    assert null_status == 200
+    assert "薪資：未提供" in null_html
+    assert "來源：104" in salary_html
+
+
+def test_job_card_limits_visible_tech_chips(
+    categorized_dashboard_jobs,
+):
+    marker = categorized_dashboard_jobs[
+        "marker"
+    ]
+    title = categorized_dashboard_jobs[
+        "titles"
+    ]["AI_DATA"]
+
+    status, html = get_dashboard(
+        "/?category=AI_DATA"
+        f"&q={marker}"
+    )
+    soup = BeautifulSoup(
+        html,
+        "html.parser",
+    )
+    card = next(
+        article
+        for article in soup.select(
+            "article.job"
+        )
+        if title in article.get_text(
+            " ",
+            strip=True,
+        )
+    )
+
+    assert status == 200
+    assert len(
+        card.select(
+            ".tech-chip:not(.tech-chip--more)"
+        )
+    ) == 5
+    assert card.select_one(
+        ".tech-chip--more"
+    ).get_text(strip=True) == "+1"

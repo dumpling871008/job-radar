@@ -1,4 +1,5 @@
 from uuid import uuid4
+from copy import deepcopy
 
 from app.services.crawler_lock_service import (
     acquire_crawler_lock,
@@ -14,6 +15,10 @@ from app.services.job_service import save_jobs
 from app.services.raw_job_service import (
     save_raw_jobs,
 )
+from app.db.database import SessionLocal
+from app.services.crawler_settings_service import (
+    CrawlerSettingsService,
+)
 
 
 PIPELINE_TRIGGER_TYPES = {
@@ -26,6 +31,19 @@ PIPELINE_TRIGGER_TYPES = {
 def reserve_pipeline():
     """Reserve the PostgreSQL lock before queuing work."""
     return acquire_crawler_lock()
+
+
+def load_runtime_config():
+    with SessionLocal() as session:
+        runtime_config = (
+            CrawlerSettingsService(
+                session
+            ).get_runtime_config()
+        )
+        # 正常情況是純讀取；若 singleton 遺失而建立 default，
+        # 在此安全持久化，避免每次 run 重複初始化。
+        session.commit()
+        return runtime_config
 
 
 def run_pipeline(
@@ -66,17 +84,27 @@ def run_pipeline(
     run_record_started = False
 
     try:
+        # 每次 run 只讀取一次；後續皆使用此 immutable snapshot。
+        runtime_config = deepcopy(
+            load_runtime_config()
+        )
         start_crawler_run(
             run_id=run_id,
             trigger_type=(
                 normalized_trigger
+            ),
+            config_snapshot=(
+                deepcopy(runtime_config)
             ),
         )
         run_record_started = True
 
         jobs, raw_jobs, crawler_stats = (
             crawl_jobs(
-                run_id=run_id
+                run_id=run_id,
+                runtime_config=(
+                    runtime_config
+                ),
             )
         )
 

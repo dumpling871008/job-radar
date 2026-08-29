@@ -15,6 +15,7 @@ from app.repositories.crawler_run_repository import (
 def start_crawler_run(
     run_id,
     trigger_type="MANUAL",
+    config_snapshot=None,
 ):
 
     with SessionLocal() as session:
@@ -28,6 +29,9 @@ def start_crawler_run(
         repository.create(
             run_id=run_id,
             trigger_type=trigger_type,
+            config_snapshot=(
+                config_snapshot
+            ),
         )
 
         session.commit()

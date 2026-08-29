@@ -12,6 +12,21 @@ class FakeReservation:
         self.released = True
 
 
+def runtime_config(max_details=100):
+    return {
+        "keywords": [
+            {
+                "keyword": "Python 工程師",
+                "target_count": 30,
+            }
+        ],
+        "max_detail_fetches": max_details,
+        "max_search_pages_per_keyword": 8,
+        "detail_refresh_hours": 48,
+        "request_interval_seconds": 2.0,
+    }
+
+
 def test_run_pipeline_with_lock_runs_pipeline(
     monkeypatch,
 ):
@@ -23,6 +38,12 @@ def test_run_pipeline_with_lock_runs_pipeline(
         "acquire_crawler_lock",
         lambda: reservation,
     )
+    config = runtime_config()
+    monkeypatch.setattr(
+        pipeline_service,
+        "load_runtime_config",
+        lambda: config,
+    )
     monkeypatch.setattr(
         pipeline_service,
         "start_crawler_run",
@@ -33,7 +54,7 @@ def test_run_pipeline_with_lock_runs_pipeline(
     monkeypatch.setattr(
         pipeline_service,
         "crawl_jobs",
-        lambda run_id: (
+        lambda run_id, runtime_config: (
             ["clean-job"],
             ["raw-job"],
             {
@@ -75,6 +96,9 @@ def test_run_pipeline_with_lock_runs_pipeline(
     assert result["started"] is True
     assert result["status"] == "SUCCESS"
     assert calls[0][0] == "start"
+    assert calls[0][1][
+        "config_snapshot"
+    ] == config
     assert calls[-1][1]["status"] == (
         "SUCCESS"
     )
@@ -122,11 +146,19 @@ def test_pipeline_exception_marks_run_failed(
     )
     monkeypatch.setattr(
         pipeline_service,
+        "load_runtime_config",
+        lambda: runtime_config(),
+    )
+    monkeypatch.setattr(
+        pipeline_service,
         "start_crawler_run",
         lambda **kwargs: None,
     )
 
-    def failed_crawl(run_id):
+    def failed_crawl(
+        run_id,
+        runtime_config,
+    ):
         raise RuntimeError(
             "mock crawler failure"
         )
@@ -176,13 +208,18 @@ def test_pipeline_exception_releases_lock(
     )
     monkeypatch.setattr(
         pipeline_service,
+        "load_runtime_config",
+        lambda: runtime_config(),
+    )
+    monkeypatch.setattr(
+        pipeline_service,
         "start_crawler_run",
         lambda **kwargs: None,
     )
     monkeypatch.setattr(
         pipeline_service,
         "crawl_jobs",
-        lambda run_id: (_ for _ in ()).throw(
+        lambda run_id, runtime_config: (_ for _ in ()).throw(
             RuntimeError("failure")
         ),
     )
@@ -217,3 +254,135 @@ def test_cli_uses_shared_run_pipeline(
     main_module.main()
 
     assert calls == ["MANUAL"]
+
+
+def test_pipeline_loads_runtime_config_once_per_run(
+    monkeypatch,
+):
+    reservation = FakeReservation()
+    configs = [runtime_config(80)]
+    load_calls = []
+    crawl_configs = []
+    start_snapshots = []
+
+    monkeypatch.setattr(
+        pipeline_service,
+        "acquire_crawler_lock",
+        lambda: reservation,
+    )
+
+    def load_config():
+        load_calls.append(True)
+        return configs[0]
+
+    def crawl(run_id, runtime_config):
+        crawl_configs.append(runtime_config)
+        # 模擬 run 中途 DB 設定已改變；本次 snapshot 不應改變。
+        configs[0] = runtime_config.copy()
+        configs[0]["max_detail_fetches"] = 200
+        return [], [], {
+            "failed_count": 0,
+        }
+
+    monkeypatch.setattr(
+        pipeline_service,
+        "load_runtime_config",
+        load_config,
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "start_crawler_run",
+        lambda **kwargs: start_snapshots.append(
+            kwargs["config_snapshot"]
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "crawl_jobs",
+        crawl,
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "save_raw_jobs",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "save_jobs",
+        lambda jobs: {},
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "finish_crawler_run",
+        lambda **kwargs: None,
+    )
+
+    first = pipeline_service.run_pipeline()
+
+    assert first["status"] == "SUCCESS"
+    assert len(load_calls) == 1
+    assert crawl_configs[0][
+        "max_detail_fetches"
+    ] == 80
+    assert start_snapshots[0][
+        "max_detail_fetches"
+    ] == 80
+
+
+def test_next_run_uses_new_runtime_config(
+    monkeypatch,
+):
+    configs = iter(
+        [runtime_config(80), runtime_config(120)]
+    )
+    used_limits = []
+
+    monkeypatch.setattr(
+        pipeline_service,
+        "acquire_crawler_lock",
+        lambda: FakeReservation(),
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "load_runtime_config",
+        lambda: next(configs),
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "start_crawler_run",
+        lambda **kwargs: None,
+    )
+
+    def crawl(run_id, runtime_config):
+        used_limits.append(
+            runtime_config[
+                "max_detail_fetches"
+            ]
+        )
+        return [], [], {"failed_count": 0}
+
+    monkeypatch.setattr(
+        pipeline_service,
+        "crawl_jobs",
+        crawl,
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "save_raw_jobs",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "save_jobs",
+        lambda jobs: {},
+    )
+    monkeypatch.setattr(
+        pipeline_service,
+        "finish_crawler_run",
+        lambda **kwargs: None,
+    )
+
+    pipeline_service.run_pipeline()
+    pipeline_service.run_pipeline()
+
+    assert used_limits == [80, 120]

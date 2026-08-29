@@ -93,6 +93,33 @@
 
 
         <!-- ====================== -->
+        <!-- Job Category Filter -->
+        <!-- ====================== -->
+
+        <nav
+            class="category-filter"
+            aria-label="職務領域"
+        >
+            <span class="filter-label">
+                職務領域：
+            </span>
+
+            {% for category_value, label in job_category_labels.items() %}
+                <a
+                    class="category-filter__link{% if category == category_value %} active{% endif %}"
+                    href="{{ category_filter_urls[category_value] }}"
+                    data-category="{{ category_value }}"
+                    {% if category == category_value %}
+                        aria-current="page"
+                    {% endif %}
+                >
+                    {{ label }}
+                </a>
+            {% endfor %}
+        </nav>
+
+
+        <!-- ====================== -->
         <!-- Application Status Filter -->
         <!-- ====================== -->
 
@@ -144,6 +171,12 @@
 
             <input
                 type="hidden"
+                name="category"
+                value="{{ category }}"
+            >
+
+            <input
+                type="hidden"
                 name="sort"
                 value="{{ sort }}"
             >
@@ -161,31 +194,77 @@
 
             <!-- 地區 -->
 
-            <select
-                class="location-select"
-                name="location"
-            >
+            <label class="location-field">
+                <span class="visually-hidden">地區</span>
+                <select
+                    class="location-select"
+                    name="location"
+                >
 
-                <option value="">
-                    全部地區
-                </option>
-
-
-                {% for item in locations %}
-
-                    <option
-                        value="{{ item }}"
-
-                        {% if item == location %}
-                            selected
-                        {% endif %}
-                    >
-                        {{ item }}
+                    <option value="">
+                        全部地區
                     </option>
 
-                {% endfor %}
 
-            </select>
+                    {% for item in locations %}
+
+                        <option
+                            value="{{ item }}"
+
+                            {% if item == location %}
+                                selected
+                            {% endif %}
+                        >
+                            {{ item }}
+                        </option>
+
+                    {% endfor %}
+
+                </select>
+            </label>
+
+
+            <!-- 技術 -->
+
+            <label class="filter-select-field">
+                <span class="visually-hidden">技術</span>
+                <select
+                    class="filter-select"
+                    name="tech"
+                >
+                    <option value="">
+                        全部技術
+                    </option>
+                    {% for item in tech_options %}
+                        <option
+                            value="{{ item }}"
+                            {% if item == tech %}selected{% endif %}
+                        >
+                            {{ item }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+
+            <!-- 年資 -->
+
+            <label class="filter-select-field">
+                <span class="visually-hidden">工作經驗</span>
+                <select
+                    class="filter-select"
+                    name="experience"
+                >
+                    {% for level, label in experience_options %}
+                        <option
+                            value="{{ level }}"
+                            {% if level == experience_level %}selected{% endif %}
+                        >
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
 
 
             <!-- 搜尋 -->
@@ -200,7 +279,7 @@
 
             <!-- 清除 -->
 
-            {% if q or location %}
+            {% if q or location or tech or experience_level != "all" %}
 
                 <a
                     class="clear-button"
@@ -300,40 +379,60 @@
                     </div>
 
 
+                    <!-- Compact badges -->
+
+                    {% set current_status = job.application.status if job.application else "UNREAD" %}
+
+                    <div class="job-badges">
+                        <span class="category-badge category-badge--{{ job.job_category|lower|replace('_', '-') }}">
+                            {{ job_category_labels.get(job.job_category, job.job_category) }}
+                        </span>
+                        <span class="application-badge application-badge--{{ current_status|lower }}">
+                            {{ application_status_labels[current_status] }}
+                        </span>
+                    </div>
+
+
+                    {% if job.tech_stack %}
+                        <div
+                            class="tech-stack"
+                            aria-label="技術需求"
+                        >
+                            {% for item in job.tech_stack[:5] %}
+                                <span class="tech-chip">
+                                    {{ item }}
+                                </span>
+                            {% endfor %}
+
+                            {% if job.tech_stack|length > 5 %}
+                                <span class="tech-chip tech-chip--more">
+                                    +{{ job.tech_stack|length - 5 }}
+                                </span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+
+
 
                     <!-- Meta -->
 
                     <div class="meta">
+                        <span>
+                            薪資：{{ job.salary_text or "未提供" }}
+                        </span>
 
+                        <span>
+                            工作經驗：{{ job.experience or "未提供" }}
+                        </span>
 
-                        {% if job.experience %}
-
-                            <span>
-
-                                經驗：
-                                {{ job.experience }}
-
-                            </span>
-
-                        {% endif %}
-
-
-                        {% if job.education %}
-
-                            <span>
-
-                                學歷：
-                                {{ job.education }}
-
-                            </span>
-
-                        {% endif %}
-
+                        <span class="source-badge">
+                            來源：{{ job.source }}
+                        </span>
 
                         <span>
 
                             第一次發現：
-                            {{ job.first_seen_at }}
+                            {{ job.first_seen_at|datetime_taipei }}
 
                         </span>
 
@@ -346,15 +445,9 @@
 
                     <div class="description">
 
-                        {% if job.description %}
+                        {% if job.description or job.description_summary %}
 
-                            {{ job.description[:300] }}
-
-                            {% if job.description|length > 300 %}
-
-                                ...
-
-                            {% endif %}
+                            {{ (job.description or job.description_summary)|preview }}
 
                         {% else %}
 
@@ -365,17 +458,22 @@
                     </div>
 
 
+                    <a
+                        class="original-job-link"
+                        href="{{ job.url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        查看 {{ job.source }} ↗
+                    </a>
+
+
                     <!-- Personal application status -->
 
-                    {% set current_status = job.application.status if job.application else "UNREAD" %}
+                    <details class="application-manager">
+                        <summary>管理</summary>
 
-                    <section class="application-panel">
-                        <div class="application-panel__header">
-                            <span>個人求職狀態</span>
-                            <span class="application-badge application-badge--{{ current_status|lower }}">
-                                {{ application_status_labels[current_status] }}
-                            </span>
-                        </div>
+                        <section class="application-panel">
 
                         <form
                             class="application-status-form"
@@ -432,7 +530,8 @@
 
                             {% include "job_application_redirect_fields.html" %}
                         </form>
-                    </section>
+                        </section>
+                    </details>
 
 
                 </article>
@@ -509,13 +608,6 @@
 
             </div>
 
-
-            <div class="page-info">
-
-                目前第 {{ page }} 頁，
-                共 {{ total_pages }} 頁
-
-            </div>
 
         {% endif %}
 {% endblock %}

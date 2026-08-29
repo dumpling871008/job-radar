@@ -19,7 +19,7 @@ def main():
             "目前已經有另一個 crawler "
             "正在執行，本次執行取消。"
         )
-        return
+        return 0
 
     print(f"Run ID：{result['run_id']}")
     print(f"Status：{result['status']}")
@@ -30,6 +30,11 @@ def main():
             f"{result['error_message']}"
         )
 
+    if result["status"] == "FAILED":
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

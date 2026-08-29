@@ -1,7 +1,6 @@
 import math
 from datetime import datetime, time, timedelta
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import (
     BackgroundTasks,
@@ -15,10 +14,22 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import contains_eager
 
 from app.db.database import SessionLocal
+from app.api.presentation import (
+    TAIPEI_TIMEZONE,
+    format_datetime_taipei,
+    normalize_preview,
+)
+from app.crawler.job_classifier import (
+    JOB_CATEGORIES,
+)
+from app.crawler.experience_normalizer import (
+    EXPERIENCE_LEVEL_LABELS,
+    normalize_experience,
+)
 from app.models.job import Job
 from app.models.job_application import (
     JobApplication,
@@ -37,11 +48,19 @@ from app.services.pipeline_service import (
     reserve_pipeline,
     run_pipeline,
 )
+from app.services.crawler_settings_service import (
+    CrawlerSettingsService,
+)
 
 
 app = FastAPI(
     title="Job Radar"
 )
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 # =========================
@@ -64,10 +83,30 @@ app.mount(
 templates = Jinja2Templates(
     directory="app/templates"
 )
+templates.env.filters[
+    "datetime_taipei"
+] = format_datetime_taipei
+templates.env.filters[
+    "preview"
+] = normalize_preview
 
 
 PAGE_SIZE = 20
-TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
+RELEVANT_JOB_CATEGORIES = (
+    "SOFTWARE",
+    "AI_DATA",
+    "DEVOPS_CLOUD",
+)
+JOB_CATEGORY_LABELS = {
+    "relevant": "相關職缺",
+    "all": "全部領域",
+    "SOFTWARE": "軟體",
+    "AI_DATA": "AI / Data",
+    "DEVOPS_CLOUD": "DevOps / Cloud",
+    "OTHER_ENGINEERING": "其他工程",
+    "NON_TECH": "非技術",
+    "UNKNOWN": "未分類",
+}
 JOB_APPLICATION_STATUS_LABELS = {
     "all": "全部",
     "UNREAD": "未處理",
@@ -152,17 +191,29 @@ def dashboard_url(
     location,
     sort,
     application_status,
+    category,
+    tech,
+    experience_level,
     page,
 ):
     parameters = {
         "view": view,
         "q": q,
         "location": location,
+        "category": category,
         "page": page,
     }
 
     if sort:
         parameters["sort"] = sort
+
+    if tech:
+        parameters["tech"] = tech
+
+    if experience_level != "all":
+        parameters["experience"] = (
+            experience_level
+        )
 
     if application_status != "all":
         parameters["status"] = (
@@ -216,6 +267,37 @@ def home(
         alias="status",
     ),
 
+    category: Literal[
+        "relevant",
+        "all",
+        "SOFTWARE",
+        "AI_DATA",
+        "DEVOPS_CLOUD",
+        "OTHER_ENGINEERING",
+        "NON_TECH",
+        "UNKNOWN",
+    ] = Query(
+        default="relevant",
+    ),
+
+    tech: str = Query(
+        default="",
+    ),
+
+    experience_level: Literal[
+        "all",
+        "NO_REQUIREMENT",
+        "NO_EXPERIENCE",
+        "UNDER_ONE",
+        "ONE_TO_THREE",
+        "THREE_TO_FIVE",
+        "FIVE_PLUS",
+        "UNKNOWN",
+    ] = Query(
+        default="all",
+        alias="experience",
+    ),
+
     message: Literal[
         "crawler_started",
         "crawler_already_running",
@@ -227,6 +309,7 @@ def home(
     q = q.strip()
     location = location.strip()
     sort = sort.strip()
+    tech = tech.strip()
 
 
     with SessionLocal() as session:
@@ -250,9 +333,56 @@ def home(
             .distinct()
             .order_by(city_expr)
         )
-        locations = session.scalars(
-            city_statement
-        ).all()
+        locations = sorted(
+            {
+                city
+                for city in session.scalars(
+                    city_statement
+                ).all()
+                if city
+            }
+        )
+
+        tech_options = sorted(
+            {
+                item
+                for stack in session.scalars(
+                    select(Job.tech_stack)
+                ).all()
+                for item in (stack or [])
+                if item
+            },
+            key=str.casefold,
+        )
+
+        experience_values = [
+            value
+            for value in session.scalars(
+                select(Job.experience)
+                .where(
+                    Job.experience.is_not(
+                        None
+                    )
+                )
+                .distinct()
+            ).all()
+            if value
+        ]
+        available_experience_levels = {
+            normalize_experience(value)
+            for value in experience_values
+        }
+        experience_options = [
+            (level, label)
+            for level, label in (
+                EXPERIENCE_LEVEL_LABELS.items()
+            )
+            if (
+                level == "all"
+                or level
+                in available_experience_levels
+            )
+        ]
 
 
         # =========================
@@ -326,6 +456,43 @@ def home(
                 Job.location.ilike(
                     f"{location}%"
                 )
+            )
+
+
+        # 預設只顯示網站定位相關的技術職缺。
+        if category == "relevant":
+            filters.append(
+                Job.job_category.in_(
+                    RELEVANT_JOB_CATEGORIES
+                )
+            )
+        elif category != "all":
+            filters.append(
+                Job.job_category == category
+            )
+
+
+        if tech:
+            filters.append(
+                Job.tech_stack.contains(
+                    [tech]
+                )
+            )
+
+
+        if experience_level != "all":
+            matching_experience_values = [
+                value
+                for value in experience_values
+                if normalize_experience(value)
+                == experience_level
+            ]
+            filters.append(
+                Job.experience.in_(
+                    matching_experience_values
+                )
+                if matching_experience_values
+                else false()
             )
 
 
@@ -468,6 +635,9 @@ def home(
         application_status=(
             application_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=1,
     )
 
@@ -480,6 +650,9 @@ def home(
         application_status=(
             application_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=1,
     )
 
@@ -492,6 +665,9 @@ def home(
         application_status=(
             application_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=1,
     )
 
@@ -504,6 +680,9 @@ def home(
         application_status=(
             application_status
         ),
+        category=category,
+        tech="",
+        experience_level="all",
         page=1,
     )
 
@@ -515,11 +694,36 @@ def home(
             location=location,
             sort=sort,
             application_status=status,
+            category=category,
+            tech=tech,
+            experience_level=experience_level,
             page=1,
         )
         for status in (
             "all",
             *JOB_APPLICATION_STATUSES,
+        )
+    }
+
+    category_filter_urls = {
+        category_value: dashboard_url(
+            home_url,
+            view=view,
+            q=q,
+            location=location,
+            sort=sort,
+            application_status=(
+                application_status
+            ),
+            category=category_value,
+            tech=tech,
+            experience_level=experience_level,
+            page=1,
+        )
+        for category_value in (
+            "relevant",
+            "all",
+            *JOB_CATEGORIES,
         )
     }
 
@@ -538,6 +742,9 @@ def home(
             application_status=(
                 application_status
             ),
+            category=category,
+            tech=tech,
+            experience_level=experience_level,
             page=page - 1,
         )
 
@@ -553,6 +760,9 @@ def home(
             application_status=(
                 application_status
             ),
+            category=category,
+            tech=tech,
+            experience_level=experience_level,
             page=page + 1,
         )
 
@@ -572,6 +782,21 @@ def home(
             "location": location,
             "locations": locations,
             "sort": sort,
+            "category": category,
+            "tech": tech,
+            "tech_options": tech_options,
+            "experience_level": (
+                experience_level
+            ),
+            "experience_options": (
+                experience_options
+            ),
+            "job_category_labels": (
+                JOB_CATEGORY_LABELS
+            ),
+            "category_filter_urls": (
+                category_filter_urls
+            ),
             "application_status": (
                 application_status
             ),
@@ -604,6 +829,9 @@ def job_dashboard_redirect(
     location,
     sort,
     application_status,
+    category,
+    tech,
+    experience_level,
     page,
     message=None,
 ):
@@ -616,6 +844,9 @@ def job_dashboard_redirect(
         application_status=(
             application_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=page,
     )
 
@@ -642,6 +873,12 @@ def trigger_crawler_run(
     sort: str = Form(""),
     page: int = Form(1),
     filter_status: str = Form("all"),
+    category: str = Form("relevant"),
+    tech: str = Form(""),
+    experience_level: str = Form(
+        "all",
+        alias="experience",
+    ),
 ):
     reservation = reserve_pipeline()
 
@@ -671,6 +908,9 @@ def trigger_crawler_run(
         application_status=(
             filter_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=max(page, 1),
         message=message,
     )
@@ -687,6 +927,12 @@ def update_job_status(
     sort: str = Form(""),
     page: int = Form(1),
     filter_status: str = Form("all"),
+    category: str = Form("relevant"),
+    tech: str = Form(""),
+    experience_level: str = Form(
+        "all",
+        alias="experience",
+    ),
 ):
     with SessionLocal() as session:
         service = JobApplicationService(
@@ -721,6 +967,9 @@ def update_job_status(
         application_status=(
             filter_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=max(page, 1),
     )
 
@@ -736,6 +985,12 @@ def update_job_note(
     sort: str = Form(""),
     page: int = Form(1),
     filter_status: str = Form("all"),
+    category: str = Form("relevant"),
+    tech: str = Form(""),
+    experience_level: str = Form(
+        "all",
+        alias="experience",
+    ),
 ):
     with SessionLocal() as session:
         service = JobApplicationService(
@@ -764,6 +1019,9 @@ def update_job_note(
         application_status=(
             filter_status
         ),
+        category=category,
+        tech=tech,
+        experience_level=experience_level,
         page=max(page, 1),
     )
 
@@ -814,6 +1072,230 @@ def runs(
             "total_runs": total_runs,
             **pagination,
         },
+    )
+
+
+def _form_enabled(value):
+    return (value or "").strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+
+
+def _settings_redirect(request, message):
+    url = request.url_for(
+        "crawler_settings"
+    ).include_query_params(
+        message=message
+    )
+    return RedirectResponse(
+        url=str(url),
+        status_code=303,
+    )
+
+
+@app.get("/settings/crawler")
+def crawler_settings(
+    request: Request,
+    message: str | None = Query(None),
+):
+    with SessionLocal() as session:
+        service = CrawlerSettingsService(
+            session
+        )
+        settings = service.get_settings()
+        keywords = service.get_keywords()
+        settings_view = {
+            "max_detail_fetches": (
+                settings.max_detail_fetches
+            ),
+            "max_search_pages_per_keyword": (
+                settings
+                .max_search_pages_per_keyword
+            ),
+            "detail_refresh_hours": (
+                settings.detail_refresh_hours
+            ),
+            "request_interval_seconds": (
+                settings
+                .request_interval_seconds
+            ),
+        }
+        keyword_views = [
+            {
+                "id": item.id,
+                "keyword": item.keyword,
+                "enabled": item.enabled,
+                "target_count": (
+                    item.target_count
+                ),
+                "sort_order": item.sort_order,
+            }
+            for item in keywords
+        ]
+        session.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="crawler_settings.html",
+        context={
+            "active_page": "crawler_settings",
+            "settings": settings_view,
+            "keywords": keyword_views,
+            "message": message,
+        },
+    )
+
+
+@app.post("/settings/crawler")
+def update_crawler_settings(
+    request: Request,
+    max_detail_fetches: str = Form(...),
+    max_search_pages_per_keyword: str = Form(...),
+    detail_refresh_hours: str = Form(...),
+    request_interval_seconds: str = Form(...),
+):
+    with SessionLocal() as session:
+        service = CrawlerSettingsService(
+            session
+        )
+        try:
+            service.update_settings(
+                max_detail_fetches=(
+                    max_detail_fetches
+                ),
+                max_search_pages_per_keyword=(
+                    max_search_pages_per_keyword
+                ),
+                detail_refresh_hours=(
+                    detail_refresh_hours
+                ),
+                request_interval_seconds=(
+                    request_interval_seconds
+                ),
+            )
+            session.commit()
+        except ValueError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail=str(error),
+            ) from error
+
+    return _settings_redirect(
+        request,
+        "settings_saved",
+    )
+
+
+@app.post("/settings/crawler/keywords")
+def add_crawler_keyword(
+    request: Request,
+    keyword: str = Form(...),
+    target_count: str = Form(...),
+    sort_order: str = Form("0"),
+    enabled: str | None = Form(None),
+):
+    with SessionLocal() as session:
+        service = CrawlerSettingsService(
+            session
+        )
+        try:
+            service.add_keyword(
+                keyword=keyword,
+                enabled=_form_enabled(
+                    enabled
+                ),
+                target_count=target_count,
+                sort_order=sort_order,
+            )
+            session.commit()
+        except ValueError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail=str(error),
+            ) from error
+
+    return _settings_redirect(
+        request,
+        "keyword_added",
+    )
+
+
+@app.post(
+    "/settings/crawler/keywords/{keyword_id}"
+)
+def update_crawler_keyword(
+    keyword_id: int,
+    request: Request,
+    keyword: str = Form(...),
+    target_count: str = Form(...),
+    sort_order: str = Form("0"),
+    enabled: str | None = Form(None),
+):
+    with SessionLocal() as session:
+        service = CrawlerSettingsService(
+            session
+        )
+        try:
+            service.update_keyword(
+                keyword_id,
+                keyword=keyword,
+                enabled=_form_enabled(
+                    enabled
+                ),
+                target_count=target_count,
+                sort_order=sort_order,
+            )
+            session.commit()
+        except ValueError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail=str(error),
+            ) from error
+        except LookupError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail=str(error),
+            ) from error
+
+    return _settings_redirect(
+        request,
+        "keyword_updated",
+    )
+
+
+@app.post(
+    "/settings/crawler/keywords/{keyword_id}/delete"
+)
+def delete_crawler_keyword(
+    keyword_id: int,
+    request: Request,
+):
+    with SessionLocal() as session:
+        service = CrawlerSettingsService(
+            session
+        )
+        try:
+            service.delete_keyword(
+                keyword_id
+            )
+            session.commit()
+        except LookupError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail=str(error),
+            ) from error
+
+    return _settings_redirect(
+        request,
+        "keyword_deleted",
     )
 
 

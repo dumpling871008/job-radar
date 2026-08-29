@@ -52,6 +52,28 @@ def test_changed_jd_should_have_different_hash():
 
     assert old_hash != new_hash
 
+
+def test_changed_salary_should_have_different_hash():
+    base_job = {
+        "job_name": "後端工程師",
+        "company_name": "ABC 公司",
+        "location": "台北市",
+        "description": "需要 Python",
+        "experience": "1年以上",
+        "education": "大學以上",
+        "salary_text": "月薪45,000元以上",
+    }
+    changed_salary = {
+        **base_job,
+        "salary_text": "月薪55,000元以上",
+    }
+
+    assert generate_content_hash(
+        base_job
+    ) != generate_content_hash(
+        changed_salary
+    )
+
 def test_transform_job():
 
     search_data = {
@@ -72,8 +94,9 @@ def test_transform_job():
 
         "jobDetail": {
             "jobDescription": (
-                "負責 Python ETL Pipeline 開發"
+                "負責 Python、FastAPI 與 PostgreSQL 開發"
             ),
+            "salary": "月薪45,000~60,000元",
         },
 
         "condition": {
@@ -107,7 +130,7 @@ def test_transform_job():
 
     assert (
         job["description"]
-        == "負責 Python ETL Pipeline 開發"
+        == "負責 Python、FastAPI 與 PostgreSQL 開發"
     )
 
     assert job["experience"] == "1年以上"
@@ -116,4 +139,15 @@ def test_transform_job():
 
     assert job["appear_date"] == "2026/08/28"
 
+    assert job["job_category"] == "AI_DATA"
+
+    assert job["salary_text"] == (
+        "月薪45,000~60,000元"
+    )
+
+    assert job["tech_stack"] == [
+        "Python",
+        "FastAPI",
+        "PostgreSQL",
+    ]
     assert len(job["content_hash"]) == 64

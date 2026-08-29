@@ -1,6 +1,16 @@
 import hashlib
 import json
 
+from app.crawler.job_classifier import (
+    classify_job,
+)
+from app.crawler.job_enrichment import (
+    extract_salary_text,
+)
+from app.crawler.tech_extractor import (
+    extract_tech_stack,
+)
+
 
 def generate_content_hash(job):
     """
@@ -15,6 +25,10 @@ def generate_content_hash(job):
         "description": job.get("description", ""),
         "experience": job.get("experience", ""),
         "education": job.get("education", ""),
+        "salary_text": job.get(
+            "salary_text",
+            "",
+        ),
     }
 
     content = json.dumps(
@@ -102,7 +116,20 @@ def transform_job(
             "appearDate",
             "",
         ),
+
+        "salary_text": extract_salary_text(
+            detail_data
+        ),
     }
+
+    job["job_category"] = classify_job(
+        job["job_name"],
+        job["description"],
+    )
+    job["tech_stack"] = extract_tech_stack(
+        job["job_name"],
+        job["description"],
+    )
 
     # 最後再算 hash
     job["content_hash"] = (

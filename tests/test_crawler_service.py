@@ -31,30 +31,9 @@ def test_one_job_failure_should_not_stop_other_jobs(
     # 而且只需要 2 筆
     # =========================
 
-    monkeypatch.setattr(
-        crawler_service,
-        "SEARCH_QUOTAS",
-        {
-            "資料工程師": 2,
-        },
-    )
-
-    monkeypatch.setattr(
-        crawler_service,
-        "MAX_DETAIL_FETCHES",
-        2,
-    )
-
-    monkeypatch.setattr(
-        crawler_service,
-        "MAX_SEARCH_PAGES_PER_KEYWORD",
-        1,
-    )
-
-    monkeypatch.setattr(
-        crawler_service,
-        "REQUEST_INTERVAL_SECONDS",
-        0,
+    runtime_config = build_runtime_config(
+        quotas={"資料工程師": 2},
+        max_details=2,
     )
 
     monkeypatch.setattr(
@@ -173,7 +152,8 @@ def test_one_job_failure_should_not_stop_other_jobs(
 
     clean_jobs, raw_jobs, stats = (
         crawler_service.crawl_jobs(
-            run_id="test-run-001"
+            run_id="test-run-001",
+            runtime_config=runtime_config,
         )
     )
 
@@ -226,11 +206,43 @@ def search_job(job_no):
     }
 
 
+def build_runtime_config(
+    *,
+    quotas,
+    max_details=120,
+    max_pages=1,
+    refresh_hours=48,
+    request_interval=0,
+):
+    return {
+        "keywords": [
+            {
+                "keyword": keyword,
+                "target_count": target_count,
+            }
+            for keyword, target_count in (
+                quotas.items()
+            )
+        ],
+        "max_detail_fetches": max_details,
+        "max_search_pages_per_keyword": (
+            max_pages
+        ),
+        "detail_refresh_hours": (
+            refresh_hours
+        ),
+        "request_interval_seconds": (
+            request_interval
+        ),
+    }
+
+
 def test_new_job_is_detail_candidate():
     candidates, stats = (
         crawler_service.select_detail_candidates(
             [search_job("new")],
             {},
+            detail_refresh_hours=48,
         )
     )
 
@@ -253,6 +265,7 @@ def test_recently_checked_job_is_skipped():
         crawler_service.select_detail_candidates(
             [search_job("fresh")],
             {"fresh": existing},
+            detail_refresh_hours=48,
             now=now,
         )
     )
@@ -268,9 +281,7 @@ def test_stale_job_is_refresh_candidate():
             now
             - timedelta(
                 hours=(
-                    crawler_service
-                    .DETAIL_REFRESH_HOURS
-                    + 1
+                    48 + 1
                 )
             )
         )
@@ -280,6 +291,7 @@ def test_stale_job_is_refresh_candidate():
         crawler_service.select_detail_candidates(
             [search_job("stale")],
             {"stale": existing},
+            detail_refresh_hours=48,
             now=now,
         )
     )
@@ -300,6 +312,7 @@ def test_null_detail_checked_at_is_refresh_candidate():
         crawler_service.select_detail_candidates(
             [search_job("null")],
             {"null": existing},
+            detail_refresh_hours=48,
         )
     )
 
@@ -316,32 +329,16 @@ def configure_search_test(
     quotas,
     max_details=120,
 ):
-    monkeypatch.setattr(
-        crawler_service,
-        "SEARCH_QUOTAS",
-        quotas,
-    )
-    monkeypatch.setattr(
-        crawler_service,
-        "MAX_DETAIL_FETCHES",
-        max_details,
-    )
-    monkeypatch.setattr(
-        crawler_service,
-        "MAX_SEARCH_PAGES_PER_KEYWORD",
-        1,
-    )
-    monkeypatch.setattr(
-        crawler_service,
-        "REQUEST_INTERVAL_SECONDS",
-        0,
+    return build_runtime_config(
+        quotas=quotas,
+        max_details=max_details,
     )
 
 
 def test_duplicate_across_keywords_fetches_detail_once(
     monkeypatch,
 ):
-    configure_search_test(
+    runtime_config = configure_search_test(
         monkeypatch,
         quotas={"Python": 5, "Backend": 5},
     )
@@ -376,7 +373,8 @@ def test_duplicate_across_keywords_fetches_detail_once(
     )
 
     _, _, stats = crawler_service.crawl_jobs(
-        "dedup-run"
+        "dedup-run",
+        runtime_config,
     )
 
     assert len(detail_calls) == 1
@@ -387,7 +385,7 @@ def test_duplicate_across_keywords_fetches_detail_once(
 def test_candidate_budget_does_not_exceed_limit(
     monkeypatch,
 ):
-    configure_search_test(
+    runtime_config = configure_search_test(
         monkeypatch,
         quotas={"Python": 200},
         max_details=120,
@@ -410,7 +408,8 @@ def test_candidate_budget_does_not_exceed_limit(
 
     candidates, stats = (
         crawler_service.collect_detail_candidates(
-            "budget-run"
+            "budget-run",
+            runtime_config,
         )
     )
 
@@ -418,10 +417,81 @@ def test_candidate_budget_does_not_exceed_limit(
     assert stats["new_candidate_count"] == 120
 
 
+def test_keyword_target_count_limits_candidates(
+    monkeypatch,
+):
+    runtime_config = build_runtime_config(
+        quotas={"Python": 2},
+        max_details=10,
+        max_pages=8,
+    )
+    calls = []
+    monkeypatch.setattr(
+        crawler_service,
+        "fetch_search_page",
+        lambda keyword, page: (
+            calls.append(page)
+            or [
+                search_job(f"{page}-{index}")
+                for index in range(5)
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        crawler_service,
+        "find_existing_jobs",
+        lambda source_job_ids: {},
+    )
+
+    candidates, _ = (
+        crawler_service.collect_detail_candidates(
+            "target-run",
+            runtime_config,
+        )
+    )
+
+    assert len(candidates) == 2
+    assert calls == [1]
+
+
+def test_max_search_pages_is_respected(
+    monkeypatch,
+):
+    runtime_config = build_runtime_config(
+        quotas={"Python": 10},
+        max_details=20,
+        max_pages=2,
+    )
+    calls = []
+    monkeypatch.setattr(
+        crawler_service,
+        "fetch_search_page",
+        lambda keyword, page: (
+            calls.append(page)
+            or [search_job(f"page-{page}")]
+        ),
+    )
+    monkeypatch.setattr(
+        crawler_service,
+        "find_existing_jobs",
+        lambda source_job_ids: {},
+    )
+
+    candidates, _ = (
+        crawler_service.collect_detail_candidates(
+            "pages-run",
+            runtime_config,
+        )
+    )
+
+    assert len(candidates) == 2
+    assert calls == [1, 2]
+
+
 def test_candidate_lookup_is_batched_per_search_page(
     monkeypatch,
 ):
-    configure_search_test(
+    runtime_config = configure_search_test(
         monkeypatch,
         quotas={"Python": 10},
     )
@@ -449,7 +519,8 @@ def test_candidate_lookup_is_batched_per_search_page(
     )
 
     crawler_service.collect_detail_candidates(
-        "batch-run"
+        "batch-run",
+        runtime_config,
     )
 
     assert lookup_calls == [
@@ -460,7 +531,7 @@ def test_candidate_lookup_is_batched_per_search_page(
 def test_detail_failure_does_not_update_checked_time(
     monkeypatch,
 ):
-    configure_search_test(
+    runtime_config = configure_search_test(
         monkeypatch,
         quotas={"Python": 1},
     )
@@ -501,7 +572,8 @@ def test_detail_failure_does_not_update_checked_time(
 
     clean_jobs, raw_jobs, _ = (
         crawler_service.crawl_jobs(
-            "failure-run"
+            "failure-run",
+            runtime_config,
         )
     )
 
@@ -516,7 +588,7 @@ def test_detail_failure_does_not_update_checked_time(
 def test_403_stops_remaining_detail_requests(
     monkeypatch,
 ):
-    configure_search_test(
+    runtime_config = configure_search_test(
         monkeypatch,
         quotas={"Python": 2},
         max_details=2,
@@ -560,7 +632,8 @@ def test_403_stops_remaining_detail_requests(
     )
 
     _, _, stats = crawler_service.crawl_jobs(
-        "forbidden-run"
+        "forbidden-run",
+        runtime_config,
     )
 
     assert len(detail_calls) == 1

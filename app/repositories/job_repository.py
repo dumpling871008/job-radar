@@ -116,6 +116,20 @@ class JobRepository:
                     "",
                 ),
 
+                job_category=job_data.get(
+                    "job_category",
+                    "UNKNOWN",
+                ),
+
+                salary_text=job_data.get(
+                    "salary_text"
+                ),
+
+                tech_stack=job_data.get(
+                    "tech_stack",
+                    [],
+                ),
+
                 url=job_data.get(
                     "url",
                     "",
@@ -166,6 +180,18 @@ class JobRepository:
         existing_job.last_seen_at = now
         existing_job.last_detail_checked_at = (
             now
+        )
+        existing_job.job_category = (
+            job_data.get(
+                "job_category",
+                "UNKNOWN",
+            )
+        )
+        existing_job.tech_stack = list(
+            job_data.get(
+                "tech_stack",
+                [],
+            )
         )
 
 
@@ -235,6 +261,12 @@ class JobRepository:
                 job_data.get(
                     "content_hash",
                     "",
+                )
+            )
+
+            existing_job.salary_text = (
+                job_data.get(
+                    "salary_text"
                 )
             )
 

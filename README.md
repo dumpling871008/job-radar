@@ -118,8 +118,9 @@ app/
 alembic/
 └── versions/         # Database migrations
 tests/                # pytest 測試
-docker-compose.yml    # Local PostgreSQL
-main.py               # CLI pipeline entry point
+Dockerfile            # Web 與 one-off crawler 共用的 production image
+docker-compose.yml    # Local PostgreSQL、Web 與 one-off crawler
+main.py               # One-off crawler pipeline entry point
 ```
 
 ## 6. Database Design
@@ -153,7 +154,7 @@ Database schema 由 Alembic migrations 管理。
 
 Dashboard 的「今日新增」使用 `first_seen_at`，「JD 更新」使用 `content_updated_at`，日期邊界以 `Asia/Taipei` 計算。
 
-## 9. Local Setup
+## 9. Local Development
 
 ### Prerequisites
 
@@ -200,21 +201,21 @@ uv sync
 uv run alembic upgrade head
 ```
 
-### 6. 執行 crawler
-
-```bash
-uv run python main.py
-```
-
-搜尋關鍵字、quota、最大筆數與頁數目前由 `app/config.py` 設定。請遵守資料來源的使用條款、保持合理請求量；本專案不繞過 CAPTCHA 或登入限制。
-
-### 7. 啟動 Dashboard
+### 6. 啟動 Dashboard
 
 ```bash
 uv run uvicorn app.api.web:app --reload
 ```
 
-開啟 <http://127.0.0.1:8000>。
+開啟 <http://127.0.0.1:8000>。本機 reload 模式沿用 Uvicorn 預設 port；production entry point 則讀取 `PORT`。
+
+### 7. 執行一次 crawler
+
+```bash
+uv run python main.py
+```
+
+CLI 與 Dashboard 共用 `run_pipeline()`。CLI 完成後結束；`SUCCESS` 與 `PARTIAL_SUCCESS` 回傳 exit code 0，整體 `FAILED` 回傳非 0。搜尋與請求設定由 Crawler Settings Dashboard 管理。請遵守資料來源的使用條款、保持合理請求量；本專案不繞過 CAPTCHA 或登入限制。
 
 ### 8. 執行測試
 
@@ -226,15 +227,93 @@ uv run pytest
 
 ## 10. Environment Variables
 
-目前只有一個必要環境變數：
+| Variable | Required | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | SQLAlchemy / psycopg 使用的 PostgreSQL connection URL |
+| `PORT` | Container Web | Production Web listen port，預設 `8080` |
+| `DOCKER_DATABASE_URL` | No | 覆寫 Docker Compose 內部 DB URL；預設連到 `postgres:5432` |
 
-| Variable | Description |
-| --- | --- |
-| `DATABASE_URL` | SQLAlchemy / psycopg 使用的 PostgreSQL connection URL |
+Host 上執行 Python 時，範例資料庫位址是 `localhost:5434`；Compose container 內必須使用 service hostname `postgres:5432`。兩者都由 runtime environment 提供，沒有寫進 Docker image。
 
-安全的 local 範例請參考 `.env.example`。不要 commit 真實 `.env` 或 production credentials。
+安全的 local 範例請參考 `.env.example`。Crawler runtime settings 仍由資料庫管理，不放回環境變數。不要 commit 真實 `.env`、API token 或 production credentials。
 
-## 11. Dashboard Features
+Docker Compose 會先解析 `.env`；若密碼含有 `$`，請在 `.env` 內用單引號包住整個 URL，避免 Compose 將它誤認為變數。不要把真實連線字串貼入 command history 或 commit。
+
+## 11. Docker
+
+Web 與 crawler 使用同一個 image，只有啟動 command 不同。Image 不包含 `.env`、Git metadata 或本機 PostgreSQL data；設定與 credentials 必須在 runtime 注入。
+
+### 1. Build image
+
+```powershell
+docker build -t job-radar .
+```
+
+### 2. 啟動 PostgreSQL
+
+只啟動既有 local PostgreSQL 的方式維持不變：
+
+```powershell
+docker compose up -d postgres
+```
+
+### 3. 執行 migration
+
+Migration 是明確的部署步驟，不會在 Web startup 自動執行：
+
+```powershell
+docker compose run --rm web uv run alembic upgrade head
+```
+
+### 4. 啟動 Docker Web
+
+```powershell
+docker compose up -d web
+Invoke-RestMethod http://localhost:8080/health
+```
+
+預設 production command 是：
+
+```text
+uv run python -m app.api.server
+```
+
+它會在 `0.0.0.0:$PORT` 啟動 FastAPI；預設 `PORT=8080`。
+
+若不使用 Compose，PowerShell 範例如下。此時資料庫位址必須是 container 可連線的位址：
+
+```powershell
+docker run --rm -p 8080:8080 `
+  -e PORT=8080 `
+  -e DATABASE_URL="postgresql+psycopg://user:password@host.docker.internal:5434/job_radar" `
+  job-radar
+```
+
+### 5. 執行 Docker crawler one-off
+
+Crawler service 使用 profile，`docker compose up` 不會讓它永久執行。需要時手動執行一次：
+
+```powershell
+docker compose run --rm crawler
+```
+
+同一個 image 也可直接覆寫 command：
+
+```powershell
+docker run --rm `
+  -e DATABASE_URL="postgresql+psycopg://user:password@host.docker.internal:5434/job_radar" `
+  job-radar uv run python main.py
+```
+
+### 6. 驗證 Compose 設定
+
+```powershell
+docker compose config
+```
+
+不要使用 `docker compose down -v`，因為 `-v` 會刪除保存 PostgreSQL 資料的 named volume。
+
+## 12. Dashboard Features
 
 - 瀏覽全部職缺，固定以最新 `first_seen_at` 優先。
 - 以 `Asia/Taipei` 顯示今日新增與今日 JD 更新。
@@ -244,7 +323,7 @@ uv run pytest
 - Crawler Runs 與 Failure Monitoring 頁面。
 - 從 Dashboard 立即觸發背景 crawler，並避免 concurrent run。
 
-## 12. Testing
+## 13. Testing
 
 ```bash
 uv run pytest
@@ -258,10 +337,24 @@ uv run pytest
 - PostgreSQL Advisory Lock 與共用 pipeline。
 - Job upsert、內容更新時間與求職狀態 repository/service。
 - Jobs Dashboard、filter、pagination、monitoring pages 與手動 background trigger。
+- `/health`、Web `PORT` 設定與 Web/Crawler entry points。
 
 測試不會呼叫真正的 104 API；需要可連線且已 migration 的 PostgreSQL。
 
-## 13. Current Scope / Future Work
+## 14. Planned GCP Architecture
+
+以下是規劃方向，尚未部署，也尚未建立任何 GCP resource：
+
+```mermaid
+flowchart TD
+    Scheduler[Cloud Scheduler] --> Job[Cloud Run Job\none-off crawler]
+    Job --> SQL[(Cloud SQL)]
+    Service[Cloud Run Service\nFastAPI Web] --> SQL
+```
+
+目前同一個 container image 可對應兩種執行模式：Cloud Run Service 使用 Web command，Cloud Run Job 覆寫為 `uv run python main.py`。Migration 應由單一、明確的部署步驟執行，不應由每個 Web instance startup 自動執行。
+
+## 15. Current Scope / Future Work
 
 ### V1 已完成
 
@@ -271,6 +364,7 @@ uv run pytest
 - FastAPI Dashboard 與個人求職狀態管理
 - CLI / Dashboard 共用 pipeline 與手動背景更新
 - Alembic migrations 與 pytest coverage
+- Web/Crawler 共用 container image 與 Docker Compose local workflow
 
 ### Future（尚未實作）
 
@@ -281,4 +375,4 @@ uv run pytest
 - Secret Manager
 - AI Job Matching
 
-以上 Future 項目僅是可能的部署與產品方向，目前 repository 尚未包含相關實作。
+以上 Future 項目僅是可能的部署與產品方向；目前 repository 只有 cloud-ready containerization，尚未真正部署到 GCP。

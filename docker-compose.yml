@@ -20,5 +20,33 @@ services:
       timeout: 5s
       retries: 10
 
+  web:
+    build: .
+    image: job-radar:local
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://job_radar:job_radar_password@postgres:5432/job_radar}
+      PORT: ${PORT:-8080}
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crawler:
+    build: .
+    image: job-radar:local
+    profiles:
+      - crawler
+    command:
+      - uv
+      - run
+      - python
+      - main.py
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://job_radar:job_radar_password@postgres:5432/job_radar}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   job_radar_postgres_data:

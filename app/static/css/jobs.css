@@ -98,7 +98,7 @@ h1 {
     line-height: 1.7;
     color: #555;
 
-    white-space: pre-line;
+    white-space: normal;
 
     border-top: 1px solid #eee;
     padding-top: 14px;
@@ -145,13 +145,6 @@ h1 {
 .pagination span {
     color: #666;
     font-size: 14px;
-}
-
-.page-info {
-    margin-top: 20px;
-    text-align: center;
-    color: #999;
-    font-size: 13px;
 }
 
 @media (max-width: 600px) {
@@ -302,7 +295,8 @@ h1 {
    Application Status Filter
 ========================= */
 
-.application-status-filter {
+.application-status-filter,
+.category-filter {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -317,7 +311,8 @@ h1 {
     font-size: 14px;
 }
 
-.application-status-filter__link {
+.application-status-filter__link,
+.category-filter__link {
     padding: 7px 11px;
 
     border: 1px solid #ddd;
@@ -329,12 +324,14 @@ h1 {
     text-decoration: none;
 }
 
-.application-status-filter__link:hover {
+.application-status-filter__link:hover,
+.category-filter__link:hover {
     border-color: #999;
     color: #222;
 }
 
-.application-status-filter__link.active {
+.application-status-filter__link.active,
+.category-filter__link.active {
     border-color: #222;
     background: #222;
     color: white;
@@ -463,6 +460,30 @@ h1 {
 
 .location-select:focus {
     border-color: #0066cc;
+}
+
+.location-field {
+    display: inline-flex;
+}
+
+.filter-select-field {
+    display: inline-flex;
+}
+
+.filter-select {
+    height: 44px;
+    min-width: 135px;
+    padding: 0 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 7px;
+    background: white;
+    color: #333;
+    font-size: 14px;
+}
+
+.filter-select:focus {
+    border-color: #0066cc;
+    outline: none;
 }
 
 
@@ -690,10 +711,256 @@ h1 {
     }
 }
 
+/* =========================
+   Crawler Settings
+========================= */
+
+.settings-header {
+    margin-bottom: 20px;
+}
+
+.settings-header h2,
+.settings-panel h3 {
+    margin-top: 0;
+}
+
+.settings-header p {
+    color: #795200;
+}
+
+.settings-panel {
+    margin-bottom: 20px;
+    padding: 20px;
+    border: 1px solid #e3e3e3;
+    border-radius: 10px;
+    background: white;
+}
+
+.settings-form,
+.add-keyword-form {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.settings-form label,
+.add-keyword-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #555;
+    font-size: 13px;
+}
+
+.settings-form input,
+.add-keyword-form input,
+.keyword-table input {
+    min-height: 38px;
+    padding: 7px 9px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: white;
+    font: inherit;
+}
+
+.settings-form button,
+.add-keyword-form button,
+.keyword-table button {
+    min-height: 38px;
+    padding: 0 13px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #222;
+    color: white;
+    cursor: pointer;
+}
+
+.settings-form > button,
+.add-keyword-form > button {
+    align-self: end;
+}
+
+.keyword-table-wrap {
+    overflow-x: auto;
+    margin-bottom: 18px;
+}
+
+.keyword-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.keyword-table th,
+.keyword-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+}
+
+.keyword-table input[name="keyword"] {
+    min-width: 220px;
+}
+
+.keyword-table input[type="checkbox"],
+.add-keyword-form input[type="checkbox"] {
+    min-height: auto;
+}
+
+.keyword-actions {
+    display: flex;
+    gap: 7px;
+}
+
+.keyword-table .danger-button {
+    border-color: #c43b3b;
+    background: white;
+    color: #a62424;
+}
+
+.run-config {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+    color: #555;
+    font-size: 13px;
+}
+
+.run-config summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.run-config dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.run-config dl div {
+    display: flex;
+    gap: 5px;
+}
+
+.run-config dd {
+    margin: 0;
+}
+
+@media (max-width: 800px) {
+    .settings-form,
+    .add-keyword-form {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .settings-form,
+    .add-keyword-form {
+        grid-template-columns: 1fr;
+    }
+}
+
 
 /* =========================
    Job Application Editor
 ========================= */
+
+.job-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 12px;
+}
+
+.tech-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.tech-chip {
+    display: inline-flex;
+    padding: 4px 8px;
+    border: 1px solid #dbe4ef;
+    border-radius: 999px;
+    background: #f5f8fc;
+    color: #36566f;
+    font-size: 12px;
+}
+
+.tech-chip--more {
+    border-color: #e2e2e2;
+    background: #f5f5f5;
+    color: #777;
+}
+
+.source-badge {
+    color: #666;
+    font-weight: 600;
+}
+
+.category-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: #f0f1f3;
+    color: #4d5661;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.category-badge--software,
+.category-badge--ai-data,
+.category-badge--devops-cloud {
+    background: #e7f0ff;
+    color: #245da8;
+}
+
+.category-badge--other-engineering {
+    background: #fff3d6;
+    color: #8a5b00;
+}
+
+.category-badge--non-tech {
+    background: #fde8e8;
+    color: #8f2828;
+}
+
+.original-job-link {
+    display: inline-block;
+    margin-top: 12px;
+    color: #0066cc;
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.original-job-link:hover {
+    text-decoration: underline;
+}
+
+.application-manager {
+    margin-top: 14px;
+}
+
+.application-manager summary {
+    display: inline-flex;
+    padding: 7px 11px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    color: #444;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.application-manager summary:hover {
+    border-color: #999;
+}
+
+.application-manager[open] summary {
+    background: #f5f6f8;
+}
 
 .application-panel {
     margin-top: 18px;
@@ -834,5 +1101,13 @@ h1 {
     .application-status-form button,
     .application-note-form button {
         height: 40px;
+    }
+
+    .filter-select-field {
+        flex: 1;
+    }
+
+    .filter-select {
+        width: 100%;
     }
 }
