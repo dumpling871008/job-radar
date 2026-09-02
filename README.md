@@ -2,7 +2,17 @@
 
 Job Radar 是一套自動蒐集、清洗、追蹤工程師職缺的資料 Pipeline 與求職管理 Dashboard。
 
-目前 V1 聚焦於 Data Pipeline 與 Backend：從 104 公開的 Search / Detail API 蒐集職缺，保存 Raw snapshot、維護可查詢的 Clean data，並透過 FastAPI Dashboard 追蹤職缺內容與個人求職狀態。
+目前 V1.3 聚焦於 Data Pipeline、Backend Dashboard 與 cloud-ready containerization：從 104 公開的 Search / Detail API 蒐集職缺，保存 Raw snapshot、維護可查詢的 Clean data，並透過 FastAPI Dashboard 追蹤職缺、crawler 執行情況與個人求職狀態。
+
+## 目前功能
+
+- 依多組關鍵字動態掃描 Search pages，並在本次 run 進行全域 jobNo 去重。
+- 批次查詢既有 jobs，只對新職缺或超過 refresh 時間的職缺呼叫 Detail API。
+- 保存 append-only Raw snapshots，並以 `content_hash` 判斷 JD 是否真正更新。
+- 產生職缺分類、薪資文字與技術標籤，支援 Dashboard 篩選。
+- 管理收藏、投遞、面試、拒絕等個人求職狀態與備註。
+- 查看 crawler runs、failures，並從 Dashboard 管理 crawler keywords 與 runtime settings。
+- Web 與 one-off crawler 共用同一個 Docker image，為 Cloud Run Service / Job 預留部署方式。
 
 ## 1. 專案動機
 
@@ -45,6 +55,8 @@ flowchart TD
     Dashboard --> Applications[(job_applications)]
     Dashboard --> Runs
     Dashboard --> Failures
+    Dashboard --> Settings[(crawler_settings / crawler_keywords)]
+    Settings --> Pipeline
 ```
 
 `run_pipeline()` 是 CLI 與 Dashboard 共用的唯一 orchestration 入口，負責 lock、run audit、crawler、Raw/Clean 寫入與最終狀態。
@@ -53,9 +65,12 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Search[Search API] --> Select[Keyword quota + pagination]
-    Select --> Dedup[jobNo dedup]
-    Dedup --> Detail[Detail API]
+    Search[Search API pages] --> Dedup[Run-global jobNo dedup]
+    Dedup --> Lookup[Batch jobs lookup]
+    Lookup --> Candidate{Candidate selection}
+    Candidate -->|NEW| Detail[Detail API]
+    Candidate -->|STALE| Detail
+    Candidate -->|FRESH| Skip[Skip Detail]
     Detail --> Snapshot[建立 Raw snapshot]
     Snapshot --> Raw[(raw_jobs)]
     Snapshot --> Transform[Transform]
@@ -69,11 +84,16 @@ flowchart LR
     Unchanged --> Dashboard
 ```
 
+- `NEW`：jobs table 尚無此 `source_job_id`，需要取得完整 Detail。
+- `STALE`：`last_detail_checked_at` 為 `NULL`，或已超過 runtime refresh 時數，需要重新取得 Detail。
+- `FRESH`：最近已成功取得 Detail，本次直接略過，不算 failure，也不建立假 Raw snapshot。
+- Detail candidate 受全域 fetch budget、每個 keyword target 與最大 Search pages 限制；同一 jobNo 每次 run 最多抓一次 Detail。
+
 - `new`：`source_job_id` 不存在，建立新職缺。
 - `updated`：職缺存在但 `content_hash` 改變，更新 Clean fields 與 `content_updated_at`。
 - `unchanged`：`content_hash` 相同，不改 JD，只更新 `last_seen_at`。
 
-每次成功取得 Detail data 都會建立新的 Raw snapshot；`raw_jobs` 不以 jobNo 去重。
+每次成功取得 Detail data 都會建立新的 Raw snapshot；`raw_jobs` 不以 jobNo 去重。成功取得 Detail 時會更新 `last_detail_checked_at`，失敗時不更新。
 
 ## 4. Tech Stack
 
@@ -130,6 +150,8 @@ main.py               # One-off crawler pipeline entry point
 - `crawler_runs`：每次 pipeline 的 trigger、狀態、時間、統計與整體錯誤。
 - `crawler_failures`：單筆 crawler failure，包含 stage、jobNo、嘗試次數與錯誤內容。
 - `job_applications`：每個 job 最多一筆個人求職狀態、備註與投遞／面試時間。
+- `crawler_settings`：全域 Detail budget、Search pages、refresh 時數與 request interval。
+- `crawler_keywords`：可啟用／停用、排序並設定 target count 的搜尋關鍵字。
 
 Database schema 由 Alembic migrations 管理。
 
@@ -138,9 +160,12 @@ Database schema 由 Alembic migrations 管理。
 - HTTP requests 設有 timeout。
 - Detail API 對 `429` 與 `5xx` 使用有限次 retry 與 exponential backoff。
 - `403` 不持續重試。
+- Detail requests 依 runtime setting 限速，不使用高 concurrency、proxy rotation 或 anti-bot bypass。
+- Candidate lookup 使用批次 `WHERE source_job_id IN (...)`，避免逐筆 N+1 query。
 - 單筆 Detail failure 會寫入 `crawler_failures`，不會中止其餘職缺。
 - PostgreSQL Advisory Lock 防止 CLI 或 Dashboard 同時啟動多個 pipeline。
 - `crawler_runs` 記錄 `RUNNING`、`SUCCESS`、`PARTIAL_SUCCESS` 或 `FAILED`。
+- 每次 pipeline 只載入一次 crawler runtime config，並將 snapshot 寫入該次 run audit。
 - Pipeline exception 會嘗試寫入 `FAILED`，並在 `finally` 釋放 advisory lock。
 - Dashboard 手動更新使用 FastAPI `BackgroundTasks`，POST 後立即 redirect。
 
@@ -151,6 +176,13 @@ Database schema 由 Alembic migrations 管理。
 - `first_seen_at`：第一次發現職缺的時間，之後不變。
 - `last_seen_at`：crawler 最近一次再次看見該職缺的時間。
 - `content_updated_at`：重要內容最近一次改變的時間；新職缺及從未改變者為 `NULL`。
+- `last_detail_checked_at`：最近一次成功取得完整 Detail API 的時間，用於判斷是否需要 refresh。
+
+Clean jobs 另外包含 deterministic enrichment：
+
+- `job_category`：軟體、AI/Data、DevOps/Cloud、其他工程、非技術或未分類。
+- `salary_text`：Detail API 提供的原始薪資顯示文字。
+- `tech_stack`：從 title / description 擷取並正規化的技術標籤。
 
 Dashboard 的「今日新增」使用 `first_seen_at`，「JD 更新」使用 `content_updated_at`，日期邊界以 `Asia/Taipei` 計算。
 
@@ -326,9 +358,11 @@ docker compose down
 - 瀏覽全部職缺，固定以最新 `first_seen_at` 優先。
 - 以 `Asia/Taipei` 顯示今日新增與今日 JD 更新。
 - 關鍵字搜尋、地區篩選與 pagination。
+- 職缺領域、技術標籤、經驗層級與薪資資訊。
 - 求職狀態：未處理、收藏、已投遞、面試、不考慮、已結束。
 - 每筆職缺可保存個人備註；投遞與面試狀態會記錄首次時間。
 - Crawler Runs 與 Failure Monitoring 頁面。
+- Crawler Settings 頁面可維護關鍵字、target、Detail budget、Search pages、refresh 與 request interval。
 - 從 Dashboard 立即觸發背景 crawler，並避免 concurrent run。
 
 ## 13. Testing
@@ -341,9 +375,12 @@ uv run pytest
 
 - Transform 與 `content_hash`。
 - Detail API retry、backoff 與 `403` 行為（HTTP 皆使用 mock）。
+- DB-aware NEW / STALE / FRESH candidate selection、全域 dedup、Detail budget 與 batch lookup。
 - 單筆 Detail failure 不影響其餘職缺。
 - PostgreSQL Advisory Lock 與共用 pipeline。
 - Job upsert、內容更新時間與求職狀態 repository/service。
+- 職缺分類、經驗正規化、薪資與 tech stack enrichment。
+- Crawler runtime settings、keywords、run config snapshot 與 Dashboard routes。
 - Jobs Dashboard、filter、pagination、monitoring pages 與手動 background trigger。
 - `/health`、Web `PORT` 設定與 Web/Crawler entry points。
 
@@ -364,12 +401,15 @@ flowchart TD
 
 ## 15. Current Scope / Future Work
 
-### V1 已完成
+### V1.3 已完成
 
 - 104 職缺 Data Pipeline
 - Raw / Clean / Audit / Failure data model
 - Job change detection
+- DB-aware Detail refresh 與動態 Search pagination
+- Deterministic job classification / enrichment
 - FastAPI Dashboard 與個人求職狀態管理
+- Crawler monitoring、runtime settings 與手動執行
 - CLI / Dashboard 共用 pipeline 與手動背景更新
 - Alembic migrations 與 pytest coverage
 - Web/Crawler 共用 container image 與 Docker Compose local workflow
